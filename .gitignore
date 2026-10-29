@@ -1,0 +1,20 @@
+# Arquivos compilados do Java
+*.class
+
+# Arquivos gerados durante a compilação
+target/
+build/
+out/
+
+# Configurações locais de IDEs
+.idea/
+
+# Arquivos de ambiente e configurações privadas
+.env
+.env.*
+!.env.example
+
+# Arquivos de configuração locais do Spring
+application-local.properties
+application-local.yml
+application-local.yaml
