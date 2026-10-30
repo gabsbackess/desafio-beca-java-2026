@@ -1,0 +1,19 @@
+services:
+  #configuração primeiro db;
+  users-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${USER_DB_NAME}
+      POSTGRES_USER: ${USER_DB_USER}
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD}
+    ports:
+      - "5433:5432"
+  #configuração segundo db;
+  transactions-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${TRANSACTIONS_DB_NAME}
+      POSTGRES_USER: ${TRANSACTIONS_DB_USER}
+      POSTGRES_PASSWORD: ${TRANSACTIONS_DB_PASSWORD}
+    ports:
+      - "5434:5432"
