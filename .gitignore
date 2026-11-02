@@ -4,7 +4,7 @@
 # Arquivos gerados durante a compilação
 target/
 build/
-out/
+/out/
 
 # Configurações locais de IDEs
 .idea/
