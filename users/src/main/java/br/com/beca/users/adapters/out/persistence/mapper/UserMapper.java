@@ -4,6 +4,8 @@ import br.com.beca.users.adapters.out.persistence.entity.UserEntity;
 import br.com.beca.users.domain.model.User;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 public class UserMapper {
     public UserEntity toEntity(User user) {
@@ -23,5 +25,10 @@ public class UserMapper {
                 user.getCpf(),
                 user.getPassword(),
                 user.getCreatedAt());
+    }
+    public List<User> toDomainList(List<UserEntity> entities) {
+        return entities.stream()
+                .map(this::toDomain)
+                .toList();
     }
 }
