@@ -2,6 +2,7 @@ package br.com.beca.users.adapters.in.web.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 
 public class CreateUserRequest {
     @NotBlank
@@ -10,6 +11,7 @@ public class CreateUserRequest {
     @Email(message = "Necessário informar endereço de e-mail válido.")
     private String email;
     @NotBlank
+    @Pattern(regexp = "\\d{11}", message = "O CPF deve conter exatamente 11 dígitos numéricos.")
     private String cpf;
     @NotBlank
     private String password;
