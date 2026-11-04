@@ -1,6 +1,7 @@
 package br.com.beca.users.adapters.in.web.exception;
 
 import br.com.beca.users.domain.exception.UserAlreadyExistsException;
+import br.com.beca.users.domain.exception.UserNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -22,6 +23,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(UserAlreadyExistsException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public String handleUserAlreadyExistsException (UserAlreadyExistsException exception){
+        return exception.getMessage();
+    }
+    @ExceptionHandler(UserNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public String handleUserNotFoundException(UserNotFoundException exception) {
         return exception.getMessage();
     }
 }

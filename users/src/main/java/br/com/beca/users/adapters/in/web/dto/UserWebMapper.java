@@ -11,4 +11,13 @@ public class UserWebMapper {
     public CreateUserResponse toResponse(User user){
     return new CreateUserResponse(user.getId(), user.getName(), user.getEmail(), user.getCpf(), user.getCreatedAt());
     }
+    public User toDomain(UpdateUserRequest request) {
+        return new User(
+                request.getName(),
+                request.getEmail(),
+                request.getCpf(),
+                request.getPassword()
+        );
+    }
+
 }
