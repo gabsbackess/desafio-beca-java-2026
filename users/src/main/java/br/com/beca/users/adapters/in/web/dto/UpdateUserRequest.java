@@ -12,7 +12,6 @@ public class UpdateUserRequest {
     @NotBlank
     @Pattern(regexp = "\\d{11}", message = "O CPF deve conter exatamente 11 dígitos numéricos.")
     private String cpf;
-    @NotBlank
     private String password;
     public UpdateUserRequest() {
     }

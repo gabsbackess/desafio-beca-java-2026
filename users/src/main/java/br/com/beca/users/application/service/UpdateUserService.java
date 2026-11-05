@@ -17,11 +17,18 @@ public class UpdateUserService implements UpdateUserUseCase {
     }
     @Override
     public User update(Long id, User user) {
-        String encryptedPassword = passwordEncoderPort.encode(user.getPassword());
+        User existingUser = userRepositoryPort.findById(id);
+        String normalizedEmail = user.getEmail().trim().toLowerCase();
+        String encryptedPassword;
+        if (user.getPassword() != null && !user.getPassword().isBlank()) {
+            encryptedPassword = passwordEncoderPort.encode(user.getPassword());
+        } else {
+            encryptedPassword = existingUser.getPassword();
+        }
         User userWithEncryptedPassword = new User(
                 id,
                 user.getName(),
-                user.getEmail(),
+                normalizedEmail,
                 user.getCpf(),
                 encryptedPassword,
                 user.getCreatedAt());
