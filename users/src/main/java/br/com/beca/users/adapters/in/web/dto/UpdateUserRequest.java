@@ -1,6 +1,9 @@
 package br.com.beca.users.adapters.in.web.dto;
+import br.com.beca.users.adapters.in.web.validation.ValidCpf;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+
+
 public class UpdateUserRequest {
     @NotBlank
     private String name;
@@ -8,6 +11,7 @@ public class UpdateUserRequest {
     @Email(message = "Necessário informar endereço de e-mail válido.")
     private String email;
     @NotBlank
+    @ValidCpf
     private String cpf;
     @NotBlank
     private String password;
