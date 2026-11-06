@@ -21,11 +21,12 @@ public class CreateUserService implements CreateUserUseCase {
     @Override
     public User create(User user) {
         String encryptedPassword = passwordEncoderPort.encode(user.getPassword());
+
         String normalizedCpf = CpfValidator.normalize(user.getCpf());
         User userWithEncryptedPassword = new User(
                 user.getName(),
                 user.getEmail(),
-                user.getCpf(),
+                normalizedCpf,
                 encryptedPassword);
         return userRepositoryPort.save(userWithEncryptedPassword);
     }

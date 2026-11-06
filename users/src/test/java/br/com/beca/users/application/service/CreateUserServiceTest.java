@@ -111,4 +111,19 @@ class CreateUserServiceTest {
         );
         assertEquals("Erro ao salvar usuário", exception.getMessage());
     }
+    @Test
+    void shouldNormalizeCpfWhenCreatingUser() {
+        User user = new User(
+                "Maria",
+                "maria@email.com",
+                "529.982.247-25",
+                "senha123"
+        );
+        when(passwordEncoderPort.encode("senha123"))
+                .thenReturn("senhaCodificada");
+        when(userRepositoryPort.save(any(User.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        User createdUser = createUserService.create(user);
+        assertEquals("52998224725", createdUser.getCpf());
+    }
 }
