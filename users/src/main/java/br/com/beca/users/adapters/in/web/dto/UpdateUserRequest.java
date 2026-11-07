@@ -13,7 +13,6 @@ public class UpdateUserRequest {
     @NotBlank
     @ValidCpf
     private String cpf;
-    @NotBlank
     private String password;
     public UpdateUserRequest() {
     }

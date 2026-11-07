@@ -19,20 +19,22 @@ public class UpdateUserService implements UpdateUserUseCase {
     @Override
     public User update(Long id, User user) {
         User existingUser = userRepositoryPort.findById(id);
+        String normalizedEmail = user.getEmail().trim().toLowerCase();
+        String normalizedCpf = CpfValidator.normalize(user.getCpf());
         String encryptedPassword;
         if (user.getPassword() == null || user.getPassword().isBlank()) {
             encryptedPassword = existingUser.getPassword();
         } else {
             encryptedPassword = passwordEncoderPort.encode(user.getPassword());
         }
-        String normalizedCpf = CpfValidator.normalize(user.getCpf());
         User userWithEncryptedPassword = new User(
                 id,
                 user.getName(),
-                user.getEmail(),
+                normalizedEmail,
                 normalizedCpf,
                 encryptedPassword,
-                existingUser.getCreatedAt());
+                existingUser.getCreatedAt()
+        );
         return userRepositoryPort.update(id, userWithEncryptedPassword);
     }
 }

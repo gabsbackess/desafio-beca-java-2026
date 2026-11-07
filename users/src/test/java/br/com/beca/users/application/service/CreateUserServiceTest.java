@@ -1,5 +1,4 @@
 package br.com.beca.users.application.service;
-
 import br.com.beca.users.application.port.out.PasswordEncoderPort;
 import br.com.beca.users.application.port.out.UserRepositoryPort;
 import br.com.beca.users.domain.model.User;
@@ -8,11 +7,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
-
 @ExtendWith(MockitoExtension.class)
 class CreateUserServiceTest {
     @Mock
@@ -23,7 +20,6 @@ class CreateUserServiceTest {
     private CreateUserService createUserService;
     @Test
     void shouldCreateUserWithEncodedPassword() {
-        // Arrange: preparar os dados
         User user = new User(
                 "Maria",
                 "maria@email.com",
@@ -34,13 +30,43 @@ class CreateUserServiceTest {
                 .thenReturn("senhaCodificada");
         when(userRepositoryPort.save(any(User.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        // Act: executar o cadastro
         User createdUser = createUserService.create(user);
-        // Assert: verificar o resultado
         assertNotNull(createdUser);
+        assertEquals("Maria", createdUser.getName());
+        assertEquals("maria@email.com", createdUser.getEmail());
         assertEquals("senhaCodificada", createdUser.getPassword());
         verify(passwordEncoderPort).encode("senha123");
         verify(userRepositoryPort).save(any(User.class));
+    }
+    @Test
+    void shouldNormalizeEmailBeforeSaving() {
+        User user = new User(
+                "Maria",
+                " Maria@Email.com ",
+                "52998224725",
+                "senha123"
+        );
+        when(passwordEncoderPort.encode("senha123"))
+                .thenReturn("senhaCodificada");
+        when(userRepositoryPort.save(any(User.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        User createdUser = createUserService.create(user);
+        assertEquals("maria@email.com", createdUser.getEmail());
+    }
+    @Test
+    void shouldNormalizeCpfWhenCreatingUser() {
+        User user = new User(
+                "Maria",
+                "maria@email.com",
+                "529.982.247-25",
+                "senha123"
+        );
+        when(passwordEncoderPort.encode("senha123"))
+                .thenReturn("senhaCodificada");
+        when(userRepositoryPort.save(any(User.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        User createdUser = createUserService.create(user);
+        assertEquals("52998224725", createdUser.getCpf());
     }
     @Test
     void shouldEncodeOriginalPassword() {
@@ -110,20 +136,5 @@ class CreateUserServiceTest {
                 () -> createUserService.create(user)
         );
         assertEquals("Erro ao salvar usuário", exception.getMessage());
-    }
-    @Test
-    void shouldNormalizeCpfWhenCreatingUser() {
-        User user = new User(
-                "Maria",
-                "maria@email.com",
-                "529.982.247-25",
-                "senha123"
-        );
-        when(passwordEncoderPort.encode("senha123"))
-                .thenReturn("senhaCodificada");
-        when(userRepositoryPort.save(any(User.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        User createdUser = createUserService.create(user);
-        assertEquals("52998224725", createdUser.getCpf());
     }
 }
