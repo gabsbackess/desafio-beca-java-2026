@@ -8,6 +8,9 @@ services:
       POSTGRES_PASSWORD: ${USER_DB_PASSWORD}
     ports:
       - "5433:5432"
+    volumes:
+      - users-db-data:/var/lib/postgresql/data
+
   #configuração segundo db;
   transactions-db:
     image: postgres:16
@@ -17,3 +20,8 @@ services:
       POSTGRES_PASSWORD: ${TRANSACTIONS_DB_PASSWORD}
     ports:
       - "5434:5432"
+    volumes:
+      - transactions-db-data:/var/lib/postgresql/data
+volumes:
+  users-db-data:
+  transactions-db-data:

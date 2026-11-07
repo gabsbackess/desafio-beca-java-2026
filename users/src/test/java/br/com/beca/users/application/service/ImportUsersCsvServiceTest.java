@@ -11,10 +11,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -39,14 +37,8 @@ class ImportUsersCsvServiceTest {
 
     @Test
     void shouldReturnErrorWhenFileIsEmpty() {
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "users.csv",
-                "text/csv",
-                new byte[0]
-        );
         ImportUsersCsvResponse response =
-                importUserCsvService.importUsers(file);
+                importUserCsvService.importUsers(new byte[0]);
         assertEquals(0, response.totalLines());
         assertEquals(0, response.registeredUsers());
         assertEquals(1, response.usersError());
@@ -56,37 +48,14 @@ class ImportUsersCsvServiceTest {
         );
     }
     @Test
-    void shouldReturnErrorWhenFileHasInvalidExtension() {
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "users.txt",
-                "text/plain",
-                "algum conteúdo".getBytes()
-        );
-        ImportUsersCsvResponse response =
-                importUserCsvService.importUsers(file);
-        assertEquals(0, response.totalLines());
-        assertEquals(0, response.registeredUsers());
-        assertEquals(1, response.usersError());
-        assertEquals(
-                "Formato de arquivo inválido. Envie um arquivo .csv.",
-                response.error().get(0)
-        );
-    }
-    @Test
     void shouldReturnErrorWhenCsvHeaderIsInvalid() {
         String csvContent = """
             nome,email,cpf,senha
             Maria,maria@email.com,12345678901,senha123
             """;
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "users.csv",
-                "text/csv",
-                csvContent.getBytes()
-        );
+        byte[] csvContentBytes = csvContent.getBytes(StandardCharsets.UTF_8);
         ImportUsersCsvResponse response =
-                importUserCsvService.importUsers(file);
+                importUserCsvService.importUsers(csvContentBytes);
         assertEquals(0, response.totalLines());
         assertEquals(0, response.registeredUsers());
         assertEquals(1, response.usersError());
@@ -103,14 +72,9 @@ class ImportUsersCsvServiceTest {
            name,email,cpf,password
            Maria,maria@email.com,12345678901,senha123
            """;
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "users.csv",
-                "text/csv",
-                csvContent.getBytes()
-        );
+        byte[] csvContentBytes = csvContent.getBytes(StandardCharsets.UTF_8);
         ImportUsersCsvResponse response =
-                importUserCsvService.importUsers(file);
+                importUserCsvService.importUsers(csvContentBytes);
         assertEquals(1, response.totalLines());
         assertEquals(1, response.registeredUsers());
         assertEquals(0, response.usersError());
@@ -129,14 +93,9 @@ class ImportUsersCsvServiceTest {
            name,email,cpf,password
            Maria,email-invalido,12345678901,senha123
            """;
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "users.csv",
-                "text/csv",
-                csvContent.getBytes()
-        );
+        byte[] csvContentBytes = csvContent.getBytes(StandardCharsets.UTF_8);
         ImportUsersCsvResponse response =
-                importUserCsvService.importUsers(file);
+                importUserCsvService.importUsers(csvContentBytes);
         assertEquals(1, response.totalLines());
         assertEquals(0, response.registeredUsers());
         assertEquals(1, response.usersError());
@@ -159,14 +118,9 @@ class ImportUsersCsvServiceTest {
            name,email,cpf,password
            Maria,maria@email.com,12345678901,senha123
            """;
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "users.csv",
-                "text/csv",
-                csvContent.getBytes()
-        );
+        byte[] csvContentBytes = csvContent.getBytes(StandardCharsets.UTF_8);
         ImportUsersCsvResponse response =
-                importUserCsvService.importUsers(file);
+                importUserCsvService.importUsers(csvContentBytes);
         assertEquals(1, response.totalLines());
         assertEquals(0, response.registeredUsers());
         assertEquals(1, response.usersError());
@@ -182,14 +136,9 @@ class ImportUsersCsvServiceTest {
            name,email,cpf,password
            "Maria,maria@email.com,12345678901,senha123
            """;
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "users.csv",
-                "text/csv",
-                csvContent.getBytes()
-        );
+        byte[] csvContentBytes = csvContent.getBytes(StandardCharsets.UTF_8);
         ImportUsersCsvResponse response =
-                importUserCsvService.importUsers(file);
+                importUserCsvService.importUsers(csvContentBytes);
         assertEquals(0, response.registeredUsers());
         assertEquals(1, response.usersError());
         assertEquals(0, response.totalLines());
@@ -214,14 +163,9 @@ class ImportUsersCsvServiceTest {
            name,email,cpf,password
            Maria,maria@email.com,12345,senha123
            """;
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "users.csv",
-                "text/csv",
-                csvContent.getBytes()
-        );
+        byte[] csvContentBytes = csvContent.getBytes(StandardCharsets.UTF_8);
         ImportUsersCsvResponse response =
-                importUserCsvService.importUsers(file);
+                importUserCsvService.importUsers(csvContentBytes);
         assertEquals(1, response.totalLines());
         assertEquals(0, response.registeredUsers());
         assertEquals(1, response.usersError());
@@ -238,14 +182,9 @@ class ImportUsersCsvServiceTest {
            name,email,cpf,password
            Maria,maria@email.com,12345678901
            """;
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "users.csv",
-                "text/csv",
-                csvContent.getBytes()
-        );
+        byte[] csvContentBytes = csvContent.getBytes(StandardCharsets.UTF_8);
         ImportUsersCsvResponse response =
-                importUserCsvService.importUsers(file);
+                importUserCsvService.importUsers(csvContentBytes);
         assertEquals(1, response.totalLines());
         assertEquals(0, response.registeredUsers());
         assertEquals(1, response.usersError());
@@ -261,37 +200,14 @@ class ImportUsersCsvServiceTest {
            name,email,cpf,password
            Maria,maria@email.com,12345678901,senha123,extra
            """;
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "users.csv",
-                "text/csv",
-                csvContent.getBytes()
-        );
+        byte[] csvContentBytes = csvContent.getBytes(StandardCharsets.UTF_8);
         ImportUsersCsvResponse response =
-                importUserCsvService.importUsers(file);
+                importUserCsvService.importUsers(csvContentBytes);
         assertEquals(1, response.totalLines());
         assertEquals(0, response.registeredUsers());
         assertEquals(1, response.usersError());
         assertEquals(
                 "Linha 2: quantidade de colunas inválida. Esperadas: 4.",
-                response.error().get(0)
-        );
-        verifyNoInteractions(createUserUseCase);
-    }
-    @Test
-    void shouldReturnErrorWhenFileCannotBeRead() throws IOException {
-        MultipartFile file = mock(MultipartFile.class);
-        when(file.isEmpty()).thenReturn(false);
-        when(file.getOriginalFilename()).thenReturn("users.csv");
-        when(file.getInputStream())
-                .thenThrow(new IOException("Falha na leitura"));
-        ImportUsersCsvResponse response =
-                importUserCsvService.importUsers(file);
-        assertEquals(0, response.totalLines());
-        assertEquals(0, response.registeredUsers());
-        assertEquals(1, response.usersError());
-        assertEquals(
-                "Não foi possível ler o arquivo CSV.",
                 response.error().get(0)
         );
         verifyNoInteractions(createUserUseCase);
@@ -317,14 +233,9 @@ class ImportUsersCsvServiceTest {
            João,email-invalido,12345678902,senha123
            Ana,ana@email.com,12345678903,senha123
            """;
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "users.csv",
-                "text/csv",
-                csvContent.getBytes()
-        );
+        byte[] csvContentBytes = csvContent.getBytes(StandardCharsets.UTF_8);
         ImportUsersCsvResponse response =
-                importUserCsvService.importUsers(file);
+                importUserCsvService.importUsers(csvContentBytes);
         assertEquals(3, response.totalLines());
         assertEquals(2, response.registeredUsers());
         assertEquals(1, response.usersError());
