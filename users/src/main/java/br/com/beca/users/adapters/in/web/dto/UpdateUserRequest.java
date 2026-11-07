@@ -1,7 +1,8 @@
 package br.com.beca.users.adapters.in.web.dto;
+import br.com.beca.users.adapters.in.web.validation.ValidCpf;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
+
 
 public class UpdateUserRequest {
     @NotBlank
@@ -10,7 +11,7 @@ public class UpdateUserRequest {
     @Email(message = "Necessário informar endereço de e-mail válido.")
     private String email;
     @NotBlank
-    @Pattern(regexp = "\\d{11}", message = "O CPF deve conter exatamente 11 dígitos numéricos.")
+    @ValidCpf
     private String cpf;
     private String password;
     public UpdateUserRequest() {
