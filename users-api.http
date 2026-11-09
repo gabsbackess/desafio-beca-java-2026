@@ -1,8 +1,20 @@
 POST http://localhost:8081/users
 Content-Type: application/json
+
 {
-“name”: “Maria Silva”,
-“email”: “maria.teste@example.com”,
-“cpf”: “12345678900”,
-“password”: “SenhaTeste123”
+ "name": "Maria Silva",
+ "email": "maria.teste@example.com",
+ "cpf": "12345678900",
+ "password": "SenhaTeste123"
 }
+
+###
+POST http://localhost:8081/users/import
+Content-Type: multipart/form-data; boundary=Boundary
+
+--Boundary
+Content-Disposition: form-data; name="file"; filename="usuarios-exemplo.csv"
+Content-Type: text/csv
+
+< ./users/exemplos/usuarios-exemplo.csv
+--Boundary--
