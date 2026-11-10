@@ -2,18 +2,27 @@ package br.com.beca.users.adapters.in.web.dto;
 
 import br.com.beca.users.validation.ValidCpf;
 import jakarta.validation.constraints.Email;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 public class CreateUserRequest {
-    @NotBlank
+    @Schema(example = "Maria Silva")
+    @NotBlank(message = "Nome é obrigatório.")
+    @Size(max = 100, message = "Nome deve ter no máximo 100 caracteres.")
     private String name;
-    @NotBlank
+    @Schema(example = "maria.silva@example.com")
+    @NotBlank(message = "E-mail é obrigatório.")
     @Email(message = "Necessário informar endereço de e-mail válido.")
+    @Size(max = 254, message = "E-mail deve ter no máximo 254 caracteres.")
     private String email;
-    @NotBlank
+    @Schema(description = "Aceita com ou sem pontuação.", example = "529.982.247-25")
+    @NotBlank(message = "CPF é obrigatório.")
     @ValidCpf
     private String cpf;
-    @NotBlank
+    @Schema(example = "Senha@123")
+    @NotBlank(message = "Senha é obrigatória.")
+    @Size(max = 72, message = "Senha deve ter no máximo 72 caracteres.")
     private String password;
 
     public CreateUserRequest(){
@@ -41,4 +50,3 @@ public class CreateUserRequest {
         return password;
     }
 }
-

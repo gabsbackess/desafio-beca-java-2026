@@ -78,6 +78,16 @@ class CsvUserDataTest {
         assertHasViolation(new CsvUserData("Maria", "maria@email.com", VALID_CPF, ""));
     }
 
+    @Test
+    void shouldRejectWhenNameIsLongerThanLimit() {
+        assertHasViolation(new CsvUserData("A".repeat(101), "maria@email.com", VALID_CPF, "senha123"));
+    }
+
+    @Test
+    void shouldRejectWhenPasswordIsLongerThanBcryptLimit() {
+        assertHasViolation(new CsvUserData("Maria", "maria@email.com", VALID_CPF, "a".repeat(73)));
+    }
+
     private void assertHasViolation(CsvUserData data) {
         Set<ConstraintViolation<CsvUserData>> violations = validator.validate(data);
         assertFalse(violations.isEmpty());

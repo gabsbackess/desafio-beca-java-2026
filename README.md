@@ -1,142 +1,262 @@
-Desafio Beca Java 2026
+# Desafio Beca Java 2026
 
-Sobre o projeto:
-Sistema de gestão de finanças pessoais desenvolvido como parte do Desafio Beca Java 2026.
-O projeto tem como objetivo aplicar conhecimentos de desenvolvimento Java, construção de APIs REST, persistência de dados e arquitetura de microsserviços.
+Sistema de gestão de finanças pessoais, desenvolvido para o Desafio Beca Java 2026. Aplica Java, APIs REST, persistência de dados, arquitetura hexagonal e microsserviços.
 
-Tecnologias:
-Java 25
-Maven
-Spring Boot
-Spring Data JPA
-PostgreSQL
-Docker e Docker Compose
-Springdoc OpenAPI
-Git e GitHub
+**Status:** em desenvolvimento. O MS1 (usuários) está pronto; o MS2 (transações) ainda será adicionado.
 
-Arquitetura:
-O sistema é organizado em microsserviços com responsabilidades independentes:
-MS1 - Usuários: responsável pelo cadastro, consulta, atualização, exclusão e importação de usuários por CSV.
-MS2 - Transações: responsável pelo processamento das operações financeiras.
+## Sumário
 
-Status do projeto:
-Em desenvolvimento.
+- [Arquitetura](#arquitetura)
+- [Tecnologias](#tecnologias)
+- [Estrutura do repositório](#estrutura-do-repositório)
+- [Como subir o ambiente](#como-subir-o-ambiente)
+- [Variáveis de ambiente](#variáveis-de-ambiente)
+- [MS1 – Usuários](#ms1--usuários)
+- [Importação de usuários por CSV](#importação-de-usuários-por-csv)
+- [Testes e cobertura](#testes-e-cobertura)
+- [Respostas e erros HTTP](#respostas-e-erros-http)
 
-Estrutura do projeto:
-O projeto utiliza uma estrutura monorepo, mantendo os microsserviços organizados em um único repositório.
-DesafioBecaJava2026/
-├── users/
+## Arquitetura
+
+O sistema é composto por microsserviços independentes, cada um com seu próprio banco PostgreSQL:
+
+| Serviço | Responsabilidade | Situação |
+|---|---|---|
+| **MS1 – Usuários** | Cadastro, consulta, atualização, exclusão e importação de usuários por CSV | Pronto |
+| **MS2 – Transações** | Operações financeiras | A fazer |
+
+O MS1 segue a **arquitetura hexagonal**: o domínio e os casos de uso não dependem de framework web nem de banco; quem fala com o mundo externo são os adaptadores, ligados por portas (interfaces).
+
+```mermaid
+flowchart LR
+    Cliente["Cliente (Swagger / Postman)"] --> WEB
+    subgraph MS1["MS1 – Usuários"]
+        WEB["adapters.in.web<br/>controllers, DTOs, tratamento de erros"] --> PIN["application.port.in<br/>casos de uso"]
+        PIN --> SVC["application.service<br/>serviços"]
+        SVC --> DOM["domain<br/>User, regras de CPF, exceções"]
+        SVC --> POUT["application.port.out<br/>repositório e senha"]
+        POUT --> PER["adapters.out.persistence<br/>JPA + PostgreSQL"]
+        POUT --> SEC["adapters.out.security<br/>BCrypt"]
+    end
+    PER --> DB[("Postgres users-db")]
+```
+
+Pacotes do MS1 (`users/src/main/java/br/com/beca/users`):
+
+```
+adapters/
+  in/web/            UserController, DTOs, UserWebMapper, GlobalExceptionHandler, OpenApiConfig
+  in/web/csv/        UserCsvController (upload do CSV)
+  out/persistence/   UserPersistenceAdapter, entidade JPA, mapper, repositório
+  out/security/      BCryptPasswordAdapter
+application/
+  port/in/           casos de uso (Create, List, FindById, Update, Delete, ImportUsersCsv)
+  port/out/          UserRepositoryPort, PasswordEncoderPort
+  service/           implementação dos casos de uso
+domain/
+  model/             User
+  validation/        CpfValidator
+  exception/         UserNotFoundException, UserAlreadyExistsException, InvalidCsvException
+validation/          anotação @ValidCpf (Bean Validation)
+```
+
+## Tecnologias
+
+Java 25, Maven, Spring Boot 4, Spring Data JPA, PostgreSQL 16, Bean Validation, Spring Security Crypto (BCrypt), Apache Commons CSV, Springdoc OpenAPI (Swagger), JUnit 5, Mockito, JaCoCo, Docker e Docker Compose, Git e GitHub.
+
+## Estrutura do repositório
+
+Monorepo, com um diretório por microsserviço:
+
+```
+desafio-beca-java-2026/
+├── users/                 MS1 – Usuários
 │   ├── src/
-│   ├── exemplos/
+│   ├── exemplos/          CSV de exemplo para importação
 │   ├── Dockerfile
 │   └── pom.xml
 ├── docker-compose.yml
 ├── .env.example
-├── .gitignore
+├── users-api.http         requisições de exemplo (IntelliJ HTTP Client)
 └── README.md
-Microsserviço de Usuários (MS1)
-Responsável pelo gerenciamento de usuários, oferecendo:
-Cadastro de usuários.
-Consulta e listagem de usuários.
-Atualização e exclusão de usuários.
-Validação de dados e CPF.
-Criptografia de senhas com BCrypt.
-Importação de usuários em massa por arquivo CSV.
+```
 
-Pré-requisitos:
-Para executar o projeto, é necessário ter instalado:
-Java 25
-Docker
-Docker Compose
-Git
+## Como subir o ambiente
 
-Configuração do ambiente
-Clone o repositório:
+**Pré-requisitos:** Java 25, Docker com Docker Compose (por exemplo, Rancher Desktop) e Git.
+
+```bash
 git clone https://github.com/gabsbackess/desafio-beca-java-2026.git
-
-Entre na pasta do projeto:
 cd desafio-beca-java-2026
+cp .env.example .env        # no Prompt de Comando: copy .env.example .env
+```
 
-Crie o arquivo .env a partir do exemplo:
-cp .env.example .env
+Edite o `.env` e troque `seu_usuario` e `sua_senha` por valores locais.
 
-Configure no arquivo .env as credenciais dos bancos PostgreSQL.
-Importante: o arquivo .env contém credenciais e configurações locais dos bancos de dados. Ele não deve ser versionado nem enviado ao GitHub.
-O arquivo .env.example deve ser utilizado como modelo para configurar o ambiente. Ele contém apenas os nomes das variáveis, sem credenciais reais.
+> O `.env` contém credenciais locais. **Nunca** o envie ao GitHub (ele já está no `.gitignore`). O `.env.example` traz só os nomes das variáveis.
 
-Executando o projeto
-Na raiz do repositório, execute:
+Suba tudo com um comando, na raiz do repositório:
+
+```bash
 docker compose up -d --build
-Esse comando constrói a imagem do microsserviço de usuários e inicia os serviços configurados no Docker Compose.
-Para verificar os containers:
-docker compose ps
-Para acompanhar os logs do microsserviço de usuários:
-docker compose logs -f users
-Para parar os serviços:
-docker compose down
+```
 
-Portas utilizadas:
-Serviço: Microsserviço de Usuários
-Porta local: 8081
-Serviço: PostgreSQL Users DB
-Porta local: 5433
-Serviço: PostgreSQL Transactions DB
-Porta local: 5434
+O Compose sobe os bancos e o MS1. O MS1 só inicia depois que o banco do MS1 está saudável (`healthcheck`). Outros comandos úteis:
 
+```bash
+docker compose ps                  # situação dos containers
+docker compose logs -f users       # logs do MS1
+docker compose down                # parar (os dados ficam nos volumes)
+docker compose down -v             # parar e apagar os dados
+```
 
-Microsserviço de Usuários (MS1)
-O MS1 disponibiliza uma API REST para o gerenciamento de usuários.
-URL base: http://localhost:8081
-Endpoints disponíveis
-POST /users: cadastrar um novo usuário.
-GET /users: listar todos os usuários.
-GET /users/{id}: buscar um usuário pelo ID.
-PUT /users/{id}: atualizar os dados de um usuário.
-DELETE /users/{id}: excluir um usuário.
-POST /users/import: importar usuários em massa por meio de um arquivo CSV.
-Documentação Swagger
-Com o projeto em execução, acesse:
-http://localhost:8081/swagger-ui.html
-O Swagger permite visualizar a documentação da API e testar seus endpoints diretamente pelo navegador.
+| Serviço | Porta local |
+|---|---|
+| MS1 – Usuários | 8081 |
+| PostgreSQL – users-db | 5433 |
+| PostgreSQL – transactions-db | 5434 |
 
-Importação de usuários por CSV
-O MS1 permite realizar o cadastro em massa de usuários por meio do envio de um arquivo CSV.
-Formato esperado do arquivo:
+## Variáveis de ambiente
+
+Definidas no `.env` (modelo em `.env.example`):
+
+| Variável | Para que serve |
+|---|---|
+| `USER_DB_NAME` | Nome do banco do MS1 |
+| `USER_DB_USER` | Usuário do banco do MS1 |
+| `USER_DB_PASSWORD` | Senha do banco do MS1 |
+| `TRANSACTIONS_DB_NAME` | Nome do banco do MS2 |
+| `TRANSACTIONS_DB_USER` | Usuário do banco do MS2 |
+| `TRANSACTIONS_DB_PASSWORD` | Senha do banco do MS2 |
+
+Dentro do Compose, o MS1 recebe a URL, o usuário e a senha do banco por variáveis `SPRING_DATASOURCE_*`. Rodando fora do Docker (IDE ou `./mvnw`), o `application.properties` usa `localhost:5433` e lê as variáveis acima do ambiente.
+
+## MS1 – Usuários
+
+URL base: `http://localhost:8081`
+
+**Swagger (OpenAPI):** `http://localhost:8081/swagger-ui.html` — documenta todos os endpoints, com exemplos de requisição e resposta, e permite testá-los pelo navegador.
+
+| Método | Rota | Descrição | Sucesso |
+|---|---|---|---|
+| POST | `/users` | Cadastrar usuário | 201 |
+| GET | `/users` | Listar usuários | 200 |
+| GET | `/users/{id}` | Buscar usuário pelo id | 200 |
+| PUT | `/users/{id}` | Atualizar usuário | 200 |
+| DELETE | `/users/{id}` | Excluir usuário | 204 |
+| POST | `/users/import` | Importar usuários por CSV | 200 |
+
+**Regras de negócio**
+
+- **CPF:** os dígitos verificadores são conferidos e CPFs com todos os dígitos iguais são recusados. Aceita ponto e traço (`529.982.247-25`); é salvo só com dígitos. É único.
+- **E-mail:** salvo sem espaços nas pontas e em minúsculas. É único.
+- **Senha:** criptografada com BCrypt, até 72 caracteres, e **nunca** aparece nas respostas nem nos logs. No `PUT`, a senha é opcional e só muda quando vem preenchida.
+- **Tamanhos:** nome até 100 caracteres e e-mail até 254.
+- CPF ou e-mail já cadastrado responde 409.
+
+Exemplo de cadastro:
+
+```http
+POST /users
+Content-Type: application/json
+
+{
+  "name": "Maria Silva",
+  "email": "maria.silva@example.com",
+  "cpf": "529.982.247-25",
+  "password": "Senha@123"
+}
+```
+
+Resposta (201):
+
+```json
+{
+  "id": 1,
+  "name": "Maria Silva",
+  "email": "maria.silva@example.com",
+  "cpf": "52998224725",
+  "createdAt": "2026-11-10T14:30:00"
+}
+```
+
+## Importação de usuários por CSV
+
+`POST /users/import`, com `multipart/form-data` e o arquivo no campo `file`. O exemplo `users/exemplos/usuarios-exemplo.csv` pode ser enviado direto pelo Swagger.
+
+**Layout do arquivo**
+
+- Separador: vírgula. Codificação: UTF-8 (o BOM do Excel é aceito).
+- Cabeçalho obrigatório com as colunas `name`, `email`, `cpf` e `password`, em qualquer ordem e sem diferenciar maiúsculas.
+
+```csv
 name,email,cpf,password
 Maria Silva,maria.silva@example.com,52998224725,Senha@123
 Joao Santos,joao.santos@example.com,11144477735,Senha@456
-Regras da importação:
-O arquivo deve possuir as colunas name, email, cpf e password.
-O limite máximo é de 1.000 registros por arquivo.
-O tamanho máximo permitido para upload é de 5 MB.
-Registros inválidos são identificados individualmente, sem interromper o processamento das demais linhas.
-O resultado informa a quantidade de registros processados, cadastrados e com erro.
-Endpoint: POST /users/import
-Um arquivo de exemplo está disponível em users/exemplos/usuarios-exemplo.csv.
+Ana Oliveira,ana.oliveira@example.com,39053344705,Senha@789
+```
 
-Testes automatizados
-O microsserviço de usuários possui testes automatizados para validar suas funcionalidades e regras de negócio.
-Os testes utilizam:
-JUnit: framework para execução dos testes automatizados.
-Mockito: biblioteca para criação de objetos simulados (mocks) e isolamento de dependências.
-Executando os testes
-Na pasta users, execute:
-./mvnw test
-Para executar os testes com limpeza e compilação completa:
-./mvnw clean test
+**Regras**
 
-Observações:
-Os comandos devem ser executados dentro da pasta users.
-As variáveis de ambiente do arquivo .env devem estar carregadas quando os testes precisarem acessar a configuração do banco de dados.
-No Git Bash, a partir da pasta users, carregue as variáveis com:
-set -a
-source ../.env
-set +a
+- Máximo de 1.000 registros e 5 MB por arquivo.
+- Cada linha passa pelas mesmas validações do cadastro (inclusive o CPF).
+- Linha inválida ou duplicada (e-mail ou CPF repetido) **não interrompe** a importação: ela é listada no resultado, com o número da linha e o motivo.
+- O arquivo inteiro é recusado (400) quando está vazio, tem cabeçalho inválido (inclusive coluna vazia), está malformado (por exemplo, aspas não fechadas) ou passa de 1.000 registros. Acima de 5 MB, responde 413.
 
-Respostas HTTP
-A API utiliza códigos de status HTTP para indicar o resultado das operações:
-200 OK: operação realizada com sucesso.
-201 Created: usuário cadastrado com sucesso.
-400 Bad Request: dados de entrada inválidos.
-404 Not Found: usuário não encontrado.
-409 Conflict: conflito no cadastro, como e-mail ou CPF já existente.
+**Resposta (200)**
+
+```json
+{
+  "totalLines": 3,
+  "registeredUsers": 2,
+  "usersError": 1,
+  "error": [
+    "Linha 3: email: E-mail inválido."
+  ]
+}
+```
+
+## Testes e cobertura
+
+Os testes usam JUnit 5 e Mockito (casos de uso, validação, controllers e adaptador de persistência). Não precisam do Docker nem do banco.
+
+Rode dentro da pasta `users`:
+
+```bash
+./mvnw test        # no Prompt de Comando do Windows: mvnw.cmd test
+./mvnw verify      # roda os testes e gera o relatório de cobertura
+```
+
+O relatório de cobertura (JaCoCo) fica em `users/target/site/jacoco/index.html`.
+
+## Respostas e erros HTTP
+
+| Código | Quando |
+|---|---|
+| 200 OK | Operação realizada |
+| 201 Created | Usuário cadastrado |
+| 204 No Content | Usuário excluído |
+| 400 Bad Request | Dados inválidos, JSON quebrado, id inválido, CSV inválido |
+| 404 Not Found | Usuário ou rota não encontrados |
+| 405 / 415 | Método HTTP ou tipo de conteúdo não suportado |
+| 409 Conflict | CPF ou e-mail já cadastrado |
+| 413 Payload Too Large | Arquivo CSV acima de 5 MB |
+| 500 Internal Server Error | Erro inesperado (mensagem fixa; o detalhe fica no log) |
+
+Formato dos erros:
+
+```json
+{ "status": 404, "message": "Usuário não encontrado." }
+```
+
+Erros de validação listam todos os campos com problema:
+
+```json
+{
+  "status": 400,
+  "errors": {
+    "email": "Necessário informar endereço de e-mail válido.",
+    "cpf": "CPF inválido."
+  }
+}
+```
