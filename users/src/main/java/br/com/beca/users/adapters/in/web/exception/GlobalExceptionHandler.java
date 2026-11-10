@@ -1,5 +1,6 @@
 package br.com.beca.users.adapters.in.web.exception;
 
+import br.com.beca.users.domain.exception.InvalidCredentialsException;
 import br.com.beca.users.domain.exception.InvalidCsvException;
 import br.com.beca.users.domain.exception.UserAlreadyExistsException;
 import br.com.beca.users.domain.exception.UserNotFoundException;
@@ -104,6 +105,15 @@ public class GlobalExceptionHandler {
             UserNotFoundException exception) {
         return buildErrorResponse(
                 HttpStatus.NOT_FOUND,
+                exception.getMessage()
+        );
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidCredentials(
+            InvalidCredentialsException exception) {
+        return buildErrorResponse(
+                HttpStatus.UNAUTHORIZED,
                 exception.getMessage()
         );
     }

@@ -1,5 +1,6 @@
 package br.com.beca.users.application.service;
 
+import java.util.UUID;
 import br.com.beca.users.application.port.out.UserRepositoryPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,7 +21,7 @@ class DeleteUserServiceTest {
 
     @Test
     void shouldDeleteUserById() {
-        Long id = 1L;
+        UUID id = UUID.randomUUID();
 
         deleteUserService.delete(id);
 
@@ -29,10 +30,10 @@ class DeleteUserServiceTest {
 
     @Test
     void shouldNotDeleteUserWithDifferentId() {
-        Long id = 1L;
+        UUID id = UUID.randomUUID();
 
         deleteUserService.delete(id);
 
-        verify(userRepositoryPort, never()).deleteById(2L);
+        verify(userRepositoryPort, never()).deleteById(UUID.randomUUID());
     }
 }

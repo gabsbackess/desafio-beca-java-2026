@@ -1,5 +1,6 @@
 package br.com.beca.users.application.service;
 
+import java.util.UUID;
 import br.com.beca.users.application.port.in.FindUserByIdUseCase;
 import br.com.beca.users.application.port.out.UserRepositoryPort;
 import br.com.beca.users.domain.model.User;
@@ -15,7 +16,7 @@ public class FindUserByIdService implements FindUserByIdUseCase {
     }
 
     @Override
-    public User findById(Long id) {
+    public User findById(UUID id) {
         return userRepositoryPort.findById(id);
     }
 }

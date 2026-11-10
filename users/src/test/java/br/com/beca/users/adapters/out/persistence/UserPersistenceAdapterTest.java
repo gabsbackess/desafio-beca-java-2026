@@ -13,8 +13,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.sql.SQLException;
+import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -52,5 +55,27 @@ class UserPersistenceAdapterTest {
                 assertThrows(DataIntegrityViolationException.class, () -> adapter.save(user));
 
         assertSame(notNull, thrown);
+    }
+
+    @Test
+    void shouldFindUserByEmail() {
+        UserEntity entity = new UserEntity();
+        entity.setName("Maria");
+        entity.setEmail("maria@email.com");
+        entity.setCpf("52998224725");
+        entity.setPassword("hash");
+        when(userJpaRepository.findByEmail("maria@email.com")).thenReturn(Optional.of(entity));
+
+        Optional<User> result = adapter.findByEmail("maria@email.com");
+
+        assertTrue(result.isPresent());
+        assertEquals("maria@email.com", result.get().getEmail());
+    }
+
+    @Test
+    void shouldReturnEmptyWhenEmailIsNotFound() {
+        when(userJpaRepository.findByEmail("x@email.com")).thenReturn(Optional.empty());
+
+        assertTrue(adapter.findByEmail("x@email.com").isEmpty());
     }
 }

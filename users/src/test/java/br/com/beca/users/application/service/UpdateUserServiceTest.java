@@ -1,4 +1,5 @@
 package br.com.beca.users.application.service;
+import java.util.UUID;
 import br.com.beca.users.application.port.out.PasswordEncoderPort;
 import br.com.beca.users.application.port.out.UserRepositoryPort;
 import br.com.beca.users.domain.exception.UserNotFoundException;
@@ -23,7 +24,7 @@ class UpdateUserServiceTest {
     private PasswordEncoderPort passwordEncoderPort;
     @InjectMocks
     private UpdateUserService updateUserService;
-    private final Long userId = 1L;
+    private final UUID userId = UUID.randomUUID();
     private final LocalDateTime creationDate =
             LocalDateTime.of(2026, 1, 10, 10, 0);
 
@@ -193,7 +194,7 @@ class UpdateUserServiceTest {
                 UserNotFoundException.class,
                 () -> updateUserService.update(userId, user)
         );
-        verify(userRepositoryPort, never()).update(anyLong(), any(User.class));
+        verify(userRepositoryPort, never()).update(any(UUID.class), any(User.class));
         verifyNoInteractions(passwordEncoderPort);
     }
 }

@@ -1,5 +1,6 @@
 package br.com.beca.users.adapters.out.persistence.entity;
 
+import java.util.UUID;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -7,8 +8,8 @@ import java.time.LocalDateTime;
 @Table(name = "users")
 public class UserEntity {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
     @Column(nullable = false)
     private String name;
     @Column(nullable = false, unique = true)
@@ -27,11 +28,11 @@ public class UserEntity {
         createdAt = LocalDateTime.now();
     }
 
-    public Long getId() {
+    public UUID getId() {
         return id;
     }
 
-    public void setId(Long id) {
+    public void setId(UUID id) {
         this.id = id;
     }
 
