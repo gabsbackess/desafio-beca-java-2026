@@ -1,6 +1,6 @@
 package br.com.beca.users.application.service;
 
-import br.com.beca.users.adapters.in.web.validation.ValidCpf;
+import br.com.beca.users.validation.ValidCpf;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 

@@ -19,7 +19,6 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -181,7 +180,23 @@ class ImportUsersCsvServiceTest {
         assertEquals(1, response.totalLines());
         assertEquals(0, response.registeredUsers());
         assertEquals(1, response.usersError());
-        assertTrue(response.error().get(0).contains("CPF inválido."));
+        assertEquals("Linha 2: cpf: CPF inválido.", response.error().get(0));
+        verifyNoInteractions(createUserUseCase);
+    }
+
+    @Test
+    void shouldReportFieldNamesInColumnOrderWhenSeveralFieldsAreInvalid() {
+        String csv = """
+                name,email,cpf,password
+                ,email-invalido,%s,
+                """.formatted(CPF_INVALID_CHECK_DIGITS);
+
+        var response = importUserCsvService.importUsers(bytes(csv));
+
+        assertEquals(
+                "Linha 2: name: Nome é obrigatório. email: E-mail inválido. "
+                        + "cpf: CPF inválido. password: Senha é obrigatória.",
+                response.error().get(0));
         verifyNoInteractions(createUserUseCase);
     }
 

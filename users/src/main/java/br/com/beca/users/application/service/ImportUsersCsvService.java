@@ -6,6 +6,7 @@ import br.com.beca.users.application.port.in.ImportUsersCsvUseCase;
 import br.com.beca.users.domain.exception.InvalidCsvException;
 import br.com.beca.users.domain.exception.UserAlreadyExistsException;
 import br.com.beca.users.domain.model.User;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -19,6 +20,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -40,10 +42,20 @@ public class ImportUsersCsvService implements ImportUsersCsvUseCase {
         this.validator = validator;
     }
 
+    private static final List<String> FIELD_ORDER = List.of("name", "email", "cpf", "password");
+
+    /**
+     * Devolve as violações no formato "campo: mensagem", sempre na mesma ordem
+     * (a das colunas do CSV; dentro do mesmo campo, ordem alfabética da mensagem).
+     */
     private List<String> validate(CsvUserData data) {
         return validator.validate(data)
                 .stream()
-                .map(violation -> violation.getMessage())
+                .sorted(Comparator
+                        .comparingInt((ConstraintViolation<CsvUserData> violation) ->
+                                FIELD_ORDER.indexOf(violation.getPropertyPath().toString()))
+                        .thenComparing(ConstraintViolation::getMessage))
+                .map(violation -> violation.getPropertyPath() + ": " + violation.getMessage())
                 .toList();
     }
 
@@ -117,7 +129,7 @@ public class ImportUsersCsvService implements ImportUsersCsvUseCase {
 
                     List<String> validationErrors = validate(data);
                     if (!validationErrors.isEmpty()) {
-                        errors.add("Linha " + line + ": " + String.join(", ", validationErrors));
+                        errors.add("Linha " + line + ": " + String.join(" ", validationErrors));
                         continue;
                     }
 
