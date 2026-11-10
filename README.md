@@ -103,8 +103,8 @@ Importação de usuários por CSV
 O MS1 permite realizar o cadastro em massa de usuários por meio do envio de um arquivo CSV.
 Formato esperado do arquivo:
 name,email,cpf,password
-Maria Silva,maria.silva@example.com,12345678901,Senha@123
-Joao Santos,joao.santos@example.com,23456789012,Senha@456
+Maria Silva,maria.silva@example.com,52998224725,Senha@123
+Joao Santos,joao.santos@example.com,11144477735,Senha@456
 Regras da importação:
 O arquivo deve possuir as colunas name, email, cpf e password.
 O limite máximo é de 1.000 registros por arquivo.
