@@ -1,4 +1,4 @@
-package br.com.beca.users.adapters.in.web.validation;
+package br.com.beca.users.validation;
 
 import jakarta.validation.Constraint;
 import jakarta.validation.Payload;

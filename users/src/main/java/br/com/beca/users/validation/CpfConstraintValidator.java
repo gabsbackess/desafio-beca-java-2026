@@ -1,4 +1,4 @@
-package br.com.beca.users.adapters.in.web.validation;
+package br.com.beca.users.validation;
 import br.com.beca.users.domain.validation.CpfValidator;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
