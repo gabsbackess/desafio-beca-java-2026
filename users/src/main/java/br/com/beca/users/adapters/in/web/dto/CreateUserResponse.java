@@ -1,16 +1,17 @@
 package br.com.beca.users.adapters.in.web.dto;
 
+import java.util.UUID;
 import java.time.LocalDateTime;
 
 public class CreateUserResponse {
-    private Long id;
+    private UUID id;
     private String name;
     private String email;
     private String cpf;
     private LocalDateTime createdAt;
 
     public CreateUserResponse (){}
-    public CreateUserResponse (Long id, String name, String email, String cpf, LocalDateTime createdAt ){
+    public CreateUserResponse (UUID id, String name, String email, String cpf, LocalDateTime createdAt ){
         this.id=id;
         this.name=name;
         this.email=email;
@@ -18,7 +19,7 @@ public class CreateUserResponse {
         this.createdAt=createdAt;
     }
 
-    public Long getId() {
+    public UUID getId() {
         return id;
     }
 

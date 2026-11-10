@@ -1,5 +1,6 @@
 package br.com.beca.users.adapters.in.web;
 
+import java.util.UUID;
 import br.com.beca.users.adapters.in.web.dto.CreateUserRequest;
 import br.com.beca.users.adapters.in.web.dto.CreateUserResponse;
 import br.com.beca.users.adapters.in.web.dto.UpdateUserRequest;
@@ -31,7 +32,7 @@ public class UserController {
             {"status": 409, "message": "CPF ou e-mail já cadastrado."}
             """;
     private static final String USER_EXAMPLE = """
-            {"id": 1, "name": "Maria Silva", "email": "maria.silva@example.com", "cpf": "52998224725", "createdAt": "2026-11-10T14:30:00"}
+            {"id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "name": "Maria Silva", "email": "maria.silva@example.com", "cpf": "52998224725", "createdAt": "2026-11-10T14:30:00"}
             """;
 
     private final CreateUserUseCase createUserUseCase;
@@ -92,14 +93,14 @@ public class UserController {
     @ApiResponse(responseCode = "200", description = "Usuário encontrado",
             content = @Content(mediaType = "application/json",
                     examples = @ExampleObject(value = USER_EXAMPLE)))
-    @ApiResponse(responseCode = "400", description = "Id inválido (não numérico)",
+    @ApiResponse(responseCode = "400", description = "Id inválido (não é um UUID)",
             content = @Content(mediaType = "application/json",
                     examples = @ExampleObject(value = "{\"status\": 400, \"message\": \"Valor inválido para o parâmetro 'id'.\"}")))
     @ApiResponse(responseCode = "404", description = "Usuário não encontrado",
             content = @Content(mediaType = "application/json",
                     examples = @ExampleObject(value = NOT_FOUND_EXAMPLE)))
     @GetMapping("/{id}")
-    public CreateUserResponse findById(@PathVariable Long id) {
+    public CreateUserResponse findById(@PathVariable UUID id) {
         User user = findUserByIdUseCase.findById(id);
         return userWebMapper.toResponse(user);
     }
@@ -120,7 +121,7 @@ public class UserController {
                     examples = @ExampleObject(value = CONFLICT_EXAMPLE)))
     @PutMapping("/{id}")
     public CreateUserResponse update(
-            @PathVariable Long id,
+            @PathVariable UUID id,
             @Valid @RequestBody UpdateUserRequest request) {
         User user = userWebMapper.toDomain(request);
         User updatedUser = updateUserUseCase.update(id, user);
@@ -134,7 +135,7 @@ public class UserController {
                     examples = @ExampleObject(value = NOT_FOUND_EXAMPLE)))
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable Long id) {
+    public void delete(@PathVariable UUID id) {
         deleteUserUseCase.delete(id);
 
     }

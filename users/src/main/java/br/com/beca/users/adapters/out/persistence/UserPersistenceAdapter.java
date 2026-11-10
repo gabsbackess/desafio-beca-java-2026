@@ -1,5 +1,7 @@
 package br.com.beca.users.adapters.out.persistence;
 
+import java.util.Optional;
+import java.util.UUID;
 import br.com.beca.users.adapters.out.persistence.entity.UserEntity;
 import br.com.beca.users.adapters.out.persistence.mapper.UserMapper;
 import br.com.beca.users.adapters.out.persistence.repository.UserJpaRepository;
@@ -46,14 +48,19 @@ public class UserPersistenceAdapter implements UserRepositoryPort {
     }
 
     @Override
-    public User findById(Long id) {
+    public User findById(UUID id) {
         UserEntity entity = userJpaRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("Usuário não encontrado."));
         return userMapper.toDomain(entity);
     }
 
     @Override
-    public User update(Long id, User user) {
+    public Optional<User> findByEmail(String email) {
+        return userJpaRepository.findByEmail(email).map(userMapper::toDomain);
+    }
+
+    @Override
+    public User update(UUID id, User user) {
         UserEntity entity = userJpaRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("Usuário não encontrado."));
         entity.setName(user.getName());
@@ -69,7 +76,7 @@ public class UserPersistenceAdapter implements UserRepositoryPort {
     }
 
     @Override
-    public void deleteById(Long id) {
+    public void deleteById(UUID id) {
         UserEntity entity = userJpaRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("Usuário não encontrado."));
         userJpaRepository.delete(entity);

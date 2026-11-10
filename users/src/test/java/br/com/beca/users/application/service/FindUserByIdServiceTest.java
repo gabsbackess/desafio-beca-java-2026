@@ -1,5 +1,6 @@
 package br.com.beca.users.application.service;
 
+import java.util.UUID;
 import br.com.beca.users.application.port.out.UserRepositoryPort;
 import br.com.beca.users.domain.model.User;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,7 @@ class FindUserByIdServiceTest {
 
     @Test
     void shouldFindUserById() {
-        Long id = 1L;
+        UUID id = UUID.randomUUID();
 
         User user = new User(
                 id,
@@ -43,12 +44,12 @@ class FindUserByIdServiceTest {
 
     @Test
     void shouldPassCorrectIdToRepository() {
-        Long id = 10L;
+        UUID id = UUID.randomUUID();
 
         when(userRepositoryPort.findById(id)).thenReturn(null);
 
         findUserByIdService.findById(id);
 
-        verify(userRepositoryPort).findById(10L);
+        verify(userRepositoryPort).findById(id);
     }
 }

@@ -1,9 +1,10 @@
 package br.com.beca.users.domain.model;
 
+import java.util.UUID;
 import java.time.LocalDateTime;
 
 public class User {
-    private Long id;
+    private UUID id;
     private String name;
     private String email;
     private String cpf;
@@ -20,7 +21,7 @@ public class User {
         this.createdAt = LocalDateTime.now();
     }
 
-    public Long getId() {
+    public UUID getId() {
         return id;
     }
 
@@ -44,7 +45,7 @@ public class User {
         return createdAt;
     }
 
-    public User(Long id, String name, String email, String cpf, String password, LocalDateTime createdAt) {
+    public User(UUID id, String name, String email, String cpf, String password, LocalDateTime createdAt) {
         this.id = id;
         this.name = name;
         this.email = email;

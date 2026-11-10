@@ -1,4 +1,5 @@
 package br.com.beca.users.application.service;
+import java.util.UUID;
 import br.com.beca.users.application.port.in.UpdateUserUseCase;
 import br.com.beca.users.application.port.out.PasswordEncoderPort;
 import br.com.beca.users.application.port.out.UserRepositoryPort;
@@ -17,7 +18,7 @@ public class UpdateUserService implements UpdateUserUseCase {
         this.passwordEncoderPort = passwordEncoderPort;
     }
     @Override
-    public User update(Long id, User user) {
+    public User update(UUID id, User user) {
         User existingUser = userRepositoryPort.findById(id);
         String normalizedEmail = user.getEmail().trim().toLowerCase();
         String normalizedCpf = CpfValidator.normalize(user.getCpf());

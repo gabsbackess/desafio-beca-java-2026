@@ -45,18 +45,18 @@ Pacotes do MS1 (`users/src/main/java/br/com/beca/users`):
 
 ```
 adapters/
-  in/web/            UserController, DTOs, UserWebMapper, GlobalExceptionHandler, OpenApiConfig
+  in/web/            UserController, UserAuthController, DTOs, UserWebMapper, GlobalExceptionHandler, OpenApiConfig
   in/web/csv/        UserCsvController (upload do CSV)
   out/persistence/   UserPersistenceAdapter, entidade JPA, mapper, repositório
   out/security/      BCryptPasswordAdapter
 application/
-  port/in/           casos de uso (Create, List, FindById, Update, Delete, ImportUsersCsv)
+  port/in/           casos de uso (Create, List, FindById, Update, Delete, ImportUsersCsv, Authenticate)
   port/out/          UserRepositoryPort, PasswordEncoderPort
   service/           implementação dos casos de uso
 domain/
   model/             User
   validation/        CpfValidator
-  exception/         UserNotFoundException, UserAlreadyExistsException, InvalidCsvException
+  exception/         UserNotFoundException, UserAlreadyExistsException, InvalidCsvException, InvalidCredentialsException
 validation/          anotação @ValidCpf (Bean Validation)
 ```
 
@@ -141,10 +141,11 @@ URL base: `http://localhost:8081`
 |---|---|---|---|
 | POST | `/users` | Cadastrar usuário | 201 |
 | GET | `/users` | Listar usuários | 200 |
-| GET | `/users/{id}` | Buscar usuário pelo id | 200 |
+| GET | `/users/{id}` | Buscar usuário pelo id (UUID) | 200 |
 | PUT | `/users/{id}` | Atualizar usuário | 200 |
 | DELETE | `/users/{id}` | Excluir usuário | 204 |
 | POST | `/users/import` | Importar usuários por CSV | 200 |
+| POST | `/users/authenticate` | Conferir e-mail e senha (usado pelo MS2) | 200 |
 
 **Regras de negócio**
 
@@ -153,6 +154,9 @@ URL base: `http://localhost:8081`
 - **Senha:** criptografada com BCrypt, até 72 caracteres, e **nunca** aparece nas respostas nem nos logs. No `PUT`, a senha é opcional e só muda quando vem preenchida.
 - **Tamanhos:** nome até 100 caracteres e e-mail até 254.
 - CPF ou e-mail já cadastrado responde 409.
+- **Identificador:** o `id` do usuário é um UUID (por exemplo, `3fa85f64-5717-4562-b3fc-2c963f66afa6`). Um id que não seja UUID responde 400.
+
+**Autenticação (para o MS2):** `POST /users/authenticate` recebe `{"email", "password"}`. Com credenciais válidas responde 200 com os dados do usuário (incluindo o `id`, sem a senha); caso contrário responde 401 `Credenciais inválidas.`, a mesma resposta para e-mail inexistente e senha errada. A rota só confere as credenciais: o MS1 não emite token.
 
 Exemplo de cadastro:
 
@@ -172,7 +176,7 @@ Resposta (201):
 
 ```json
 {
-  "id": 1,
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
   "name": "Maria Silva",
   "email": "maria.silva@example.com",
   "cpf": "52998224725",
@@ -237,6 +241,7 @@ O relatório de cobertura (JaCoCo) fica em `users/target/site/jacoco/index.html`
 | 201 Created | Usuário cadastrado |
 | 204 No Content | Usuário excluído |
 | 400 Bad Request | Dados inválidos, JSON quebrado, id inválido, CSV inválido |
+| 401 Unauthorized | E-mail ou senha inválidos em `/users/authenticate` |
 | 404 Not Found | Usuário ou rota não encontrados |
 | 405 / 415 | Método HTTP ou tipo de conteúdo não suportado |
 | 409 Conflict | CPF ou e-mail já cadastrado |

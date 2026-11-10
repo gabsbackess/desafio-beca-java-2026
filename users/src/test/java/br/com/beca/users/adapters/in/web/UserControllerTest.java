@@ -1,5 +1,6 @@
 package br.com.beca.users.adapters.in.web;
 
+import java.util.UUID;
 import br.com.beca.users.adapters.in.web.dto.UserWebMapper;
 import br.com.beca.users.adapters.in.web.exception.GlobalExceptionHandler;
 import br.com.beca.users.application.port.in.CreateUserUseCase;
@@ -37,6 +38,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class UserControllerTest {
 
     private static final String VALID_CPF = "52998224725";
+    private static final UUID ID = UUID.fromString("3fa85f64-5717-4562-b3fc-2c963f66afa6");
+    private static final UUID UNKNOWN_ID = UUID.fromString("11111111-2222-3333-4444-555555555555");
 
     @Autowired
     private MockMvc mockMvc;
@@ -59,7 +62,7 @@ class UserControllerTest {
     }
 
     private static User savedUser() {
-        return new User(1L, "Maria", "maria@email.com", VALID_CPF, "hash-bcrypt",
+        return new User(ID, "Maria", "maria@email.com", VALID_CPF, "hash-bcrypt",
                 LocalDateTime.of(2026, 1, 10, 10, 0));
     }
 
@@ -71,7 +74,7 @@ class UserControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("Maria", "maria@email.com", VALID_CPF, "Senha@123")))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.id").value(ID.toString()))
                 .andExpect(jsonPath("$.email").value("maria@email.com"))
                 .andExpect(jsonPath("$.password").doesNotExist());
     }
@@ -135,10 +138,10 @@ class UserControllerTest {
 
     @Test
     void shouldReturn404WhenUserIsNotFound() throws Exception {
-        when(findUserByIdUseCase.findById(99L))
+        when(findUserByIdUseCase.findById(UNKNOWN_ID))
                 .thenThrow(new UserNotFoundException("Usuário não encontrado."));
 
-        mockMvc.perform(get("/users/99"))
+        mockMvc.perform(get("/users/" + UNKNOWN_ID))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("Usuário não encontrado."));
     }
@@ -153,9 +156,9 @@ class UserControllerTest {
 
     @Test
     void shouldUpdateUserWithoutPassword() throws Exception {
-        when(updateUserUseCase.update(eq(1L), any(User.class))).thenReturn(savedUser());
+        when(updateUserUseCase.update(eq(ID), any(User.class))).thenReturn(savedUser());
 
-        mockMvc.perform(put("/users/1")
+        mockMvc.perform(put("/users/" + ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"name":"Maria","email":"maria@email.com","cpf":"%s"}
@@ -166,16 +169,16 @@ class UserControllerTest {
 
     @Test
     void shouldReturn204WhenUserIsDeleted() throws Exception {
-        mockMvc.perform(delete("/users/1"))
+        mockMvc.perform(delete("/users/" + ID))
                 .andExpect(status().isNoContent());
     }
 
     @Test
     void shouldReturn404WhenDeletingUnknownUser() throws Exception {
         doThrow(new UserNotFoundException("Usuário não encontrado."))
-                .when(deleteUserUseCase).delete(99L);
+                .when(deleteUserUseCase).delete(UNKNOWN_ID);
 
-        mockMvc.perform(delete("/users/99"))
+        mockMvc.perform(delete("/users/" + UNKNOWN_ID))
                 .andExpect(status().isNotFound());
     }
 }
