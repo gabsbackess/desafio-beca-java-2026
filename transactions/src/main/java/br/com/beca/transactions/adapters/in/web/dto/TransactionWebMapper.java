@@ -10,9 +10,9 @@ import java.util.UUID;
 @Component
 public class TransactionWebMapper {
 
-    public CreateTransactionCommand toCommand(CreateTransactionRequest request) {
+    public CreateTransactionCommand toCommand(CreateTransactionRequest request, UUID userId) {
         return new CreateTransactionCommand(
-                request.userId(),
+                userId,
                 request.type(),
                 request.amount(),
                 request.category(),

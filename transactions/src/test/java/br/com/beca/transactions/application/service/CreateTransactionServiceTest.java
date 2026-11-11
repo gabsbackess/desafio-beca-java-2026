@@ -3,10 +3,12 @@ package br.com.beca.transactions.application.service;
 import br.com.beca.transactions.support.Ids;
 import br.com.beca.transactions.application.port.in.CreateTransactionCommand;
 import br.com.beca.transactions.application.port.out.AccountLimitsPort;
+import br.com.beca.transactions.application.port.out.UserLookupPort;
 import br.com.beca.transactions.application.port.out.TransactionRepositoryPort;
 import br.com.beca.transactions.domain.exception.AccountNotFoundException;
 import br.com.beca.transactions.domain.exception.AccountServiceUnavailableException;
 import br.com.beca.transactions.domain.exception.InvalidTransactionException;
+import br.com.beca.transactions.domain.exception.UserServiceUnavailableException;
 import br.com.beca.transactions.domain.model.AccountLimits;
 import br.com.beca.transactions.domain.model.Category;
 import br.com.beca.transactions.domain.model.Transaction;
@@ -31,6 +33,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -49,13 +54,16 @@ class CreateTransactionServiceTest {
     @Mock
     private AccountLimitsPort accountLimitsPort;
 
+    @Mock
+    private UserLookupPort userLookupPort;
+
     private CreateTransactionService service;
 
     @BeforeEach
     void setUp() {
         Clock clock = Clock.fixed(Instant.parse("2026-11-10T12:00:00Z"),
                 ZoneId.of("America/Sao_Paulo"));
-        service = new CreateTransactionService(transactionRepositoryPort, accountLimitsPort, clock);
+        service = new CreateTransactionService(transactionRepositoryPort, accountLimitsPort, userLookupPort, clock);
     }
 
     private static BigDecimal bd(String value) {
@@ -74,7 +82,7 @@ class CreateTransactionServiceTest {
     }
 
     @Test
-    void shouldApproveDepositWithoutConsultingAccountLimits() {
+    void shouldApproveDepositAndCreditTheBalanceWithoutCheckingLimits() {
         saveReturnsArgument();
 
         Transaction result = service.create(new CreateTransactionCommand(
@@ -82,7 +90,8 @@ class CreateTransactionServiceTest {
 
         assertEquals(TransactionStatus.APPROVED, result.getStatus());
         assertNull(result.getRejectionReason());
-        verifyNoInteractions(accountLimitsPort);
+        verify(accountLimitsPort).adjustBalance(eq(Ids.USER), argThat(delta -> delta.compareTo(bd("5000")) == 0));
+        verify(accountLimitsPort, never()).findByUserId(any());
         verify(transactionRepositoryPort, never()).sumApprovedExpensesOn(any(), any());
     }
 
@@ -135,6 +144,7 @@ class CreateTransactionServiceTest {
     @Test
     void shouldRejectWhenDailyLimitIsExceededByTodaysApprovedExpenses() {
         saveReturnsArgument();
+        when(userLookupPort.exists(Ids.OTHER_USER)).thenReturn(true);
         when(accountLimitsPort.findByUserId(Ids.USER))
                 .thenReturn(new AccountLimits(bd("1000"), bd("500"), bd("800")));
         when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(bd("700"));
@@ -197,5 +207,116 @@ class CreateTransactionServiceTest {
                 Ids.USER, TransactionType.DEPOSIT, bd("10"), null, null, null));
 
         assertEquals(Ids.TX_ID, result.getId());
+    }
+
+    @Test
+    void shouldDebitTheAccountWhenAnOutflowIsApproved() {
+        saveReturnsArgument();
+        when(accountLimitsPort.findByUserId(Ids.USER))
+                .thenReturn(new AccountLimits(bd("1000"), bd("500"), bd("800")));
+        when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(BigDecimal.ZERO);
+
+        service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.PURCHASE, bd("120.50"), Category.FOOD, "mercado", null));
+
+        verify(accountLimitsPort).adjustBalance(eq(Ids.USER), argThat(delta -> delta.compareTo(bd("-120.50")) == 0));
+    }
+
+    @Test
+    void shouldNotTouchTheAccountWhenTheTransactionIsRejected() {
+        saveReturnsArgument();
+        when(accountLimitsPort.findByUserId(Ids.USER))
+                .thenReturn(new AccountLimits(bd("100"), bd("1000"), bd("1000")));
+        when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(BigDecimal.ZERO);
+
+        Transaction result = service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.WITHDRAWAL, bd("150"), null, "saque", null));
+
+        assertEquals(TransactionStatus.REJECTED, result.getStatus());
+        verify(accountLimitsPort, never()).adjustBalance(any(), any());
+    }
+
+    @Test
+    void shouldRejectAndRecordWhenTheBalanceUpdateFails() {
+        saveReturnsArgument();
+        when(accountLimitsPort.findByUserId(Ids.USER))
+                .thenReturn(new AccountLimits(bd("1000"), bd("500"), bd("800")));
+        when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(BigDecimal.ZERO);
+        doThrow(new AccountServiceUnavailableException("fora do ar"))
+                .when(accountLimitsPort).adjustBalance(any(), any());
+
+        Transaction result = service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.PURCHASE, bd("50"), Category.LEISURE, "cinema", null));
+
+        assertEquals(TransactionStatus.REJECTED, result.getStatus());
+        assertEquals(CreateTransactionService.ACCOUNT_SERVICE_UNAVAILABLE, result.getRejectionReason());
+        assertEquals(TransactionStatus.REJECTED, savedTransaction().getStatus());
+    }
+
+    @Test
+    void shouldRejectDepositWhenTheUserHasNoAccount() {
+        saveReturnsArgument();
+        doThrow(new AccountNotFoundException("sem conta"))
+                .when(accountLimitsPort).adjustBalance(any(), any());
+
+        Transaction result = service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.DEPOSIT, bd("10"), null, "salario", null));
+
+        assertEquals(TransactionStatus.REJECTED, result.getStatus());
+        assertEquals(CreateTransactionService.ACCOUNT_NOT_FOUND, result.getRejectionReason());
+    }
+
+    @Test
+    void shouldApproveTransferToAnExistingUserAndDebitTheSender() {
+        saveReturnsArgument();
+        when(userLookupPort.exists(Ids.OTHER_USER)).thenReturn(true);
+        when(accountLimitsPort.findByUserId(Ids.USER))
+                .thenReturn(new AccountLimits(bd("1000"), bd("500"), bd("800")));
+        when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(BigDecimal.ZERO);
+
+        Transaction result = service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.TRANSFER, bd("200"), null, "pix", Ids.OTHER_USER));
+
+        assertEquals(TransactionStatus.APPROVED, result.getStatus());
+        verify(accountLimitsPort).adjustBalance(eq(Ids.USER), argThat(delta -> delta.compareTo(bd("-200")) == 0));
+    }
+
+    @Test
+    void shouldRejectTransferWhenTheDestinationUserDoesNotExist() {
+        saveReturnsArgument();
+        when(userLookupPort.exists(Ids.UNKNOWN)).thenReturn(false);
+
+        Transaction result = service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.TRANSFER, bd("200"), null, "pix", Ids.UNKNOWN));
+
+        assertEquals(TransactionStatus.REJECTED, result.getStatus());
+        assertEquals(CreateTransactionService.DESTINATION_NOT_FOUND, result.getRejectionReason());
+        verifyNoInteractions(accountLimitsPort);
+    }
+
+    @Test
+    void shouldRejectTransferWhenTheUsersServiceIsDown() {
+        saveReturnsArgument();
+        when(userLookupPort.exists(Ids.OTHER_USER)).thenThrow(new UserServiceUnavailableException("fora do ar"));
+
+        Transaction result = service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.TRANSFER, bd("200"), null, "pix", Ids.OTHER_USER));
+
+        assertEquals(TransactionStatus.REJECTED, result.getStatus());
+        assertEquals(CreateTransactionService.DESTINATION_CHECK_UNAVAILABLE, result.getRejectionReason());
+        verifyNoInteractions(accountLimitsPort);
+    }
+
+    @Test
+    void shouldNotConsultTheUsersServiceForPurchases() {
+        saveReturnsArgument();
+        when(accountLimitsPort.findByUserId(Ids.USER))
+                .thenReturn(new AccountLimits(bd("1000"), bd("500"), bd("800")));
+        when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(BigDecimal.ZERO);
+
+        service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.PURCHASE, bd("10"), Category.OTHER, "balas", null));
+
+        verifyNoInteractions(userLookupPort);
     }
 }

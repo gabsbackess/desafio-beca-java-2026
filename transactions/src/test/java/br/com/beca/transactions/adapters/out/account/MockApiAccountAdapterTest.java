@@ -15,11 +15,13 @@ import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.springframework.http.HttpMethod.GET;
+import static org.springframework.http.HttpMethod.PUT;
 
 class MockApiAccountAdapterTest {
 
@@ -94,5 +96,73 @@ class MockApiAccountAdapterTest {
                         """.formatted(Ids.USER), MediaType.APPLICATION_JSON));
 
         assertThrows(AccountServiceUnavailableException.class, () -> adapter.findByUserId(Ids.USER));
+    }
+
+    @Test
+    void shouldUpdateTheBalanceWithAPutUsingTheItemId() {
+        server.expect(requestTo("http://mock/accounts?userId=" + Ids.USER))
+                .andRespond(withSuccess("""
+                        [{"id":"7","userId":"%s","balance":1000,"perTransactionLimit":500,"dailyLimit":800}]
+                        """.formatted(Ids.USER), MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://mock/accounts/7"))
+                .andExpect(method(PUT))
+                .andExpect(jsonPath("$.userId").value(Ids.USER.toString()))
+                .andExpect(jsonPath("$.balance").value(879.5))
+                .andExpect(jsonPath("$.perTransactionLimit").value(500))
+                .andExpect(jsonPath("$.dailyLimit").value(800))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        adapter.adjustBalance(Ids.USER, new BigDecimal("-120.50"));
+
+        server.verify();
+    }
+
+    @Test
+    void shouldCreditTheBalanceWhenTheDeltaIsPositive() {
+        server.expect(requestTo("http://mock/accounts?userId=" + Ids.USER))
+                .andRespond(withSuccess("""
+                        [{"id":"7","userId":"%s","balance":100,"perTransactionLimit":500,"dailyLimit":800}]
+                        """.formatted(Ids.USER), MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://mock/accounts/7"))
+                .andExpect(method(PUT))
+                .andExpect(jsonPath("$.balance").value(150.25))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        adapter.adjustBalance(Ids.USER, new BigDecimal("50.25"));
+
+        server.verify();
+    }
+
+    @Test
+    void shouldThrowUnavailableWhenTheAccountHasNoIdToUpdate() {
+        server.expect(requestTo("http://mock/accounts?userId=" + Ids.USER))
+                .andRespond(withSuccess("""
+                        [{"userId":"%s","balance":1000,"perTransactionLimit":500,"dailyLimit":800}]
+                        """.formatted(Ids.USER), MediaType.APPLICATION_JSON));
+
+        assertThrows(AccountServiceUnavailableException.class,
+                () -> adapter.adjustBalance(Ids.USER, BigDecimal.TEN));
+    }
+
+    @Test
+    void shouldThrowUnavailableWhenTheUpdateFails() {
+        server.expect(requestTo("http://mock/accounts?userId=" + Ids.USER))
+                .andRespond(withSuccess("""
+                        [{"id":"7","userId":"%s","balance":1000,"perTransactionLimit":500,"dailyLimit":800}]
+                        """.formatted(Ids.USER), MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://mock/accounts/7"))
+                .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+
+        assertThrows(AccountServiceUnavailableException.class,
+                () -> adapter.adjustBalance(Ids.USER, BigDecimal.TEN));
+    }
+
+    @Test
+    void shouldThrowAccountNotFoundWhenUpdatingAUserWithoutAccount() {
+        server.expect(requestTo("http://mock/accounts?userId=" + Ids.USER))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).body("Not found"));
+
+        assertThrows(AccountNotFoundException.class,
+                () -> adapter.adjustBalance(Ids.USER, BigDecimal.TEN));
     }
 }

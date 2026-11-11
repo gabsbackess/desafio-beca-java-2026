@@ -1,5 +1,6 @@
 package br.com.beca.transactions.adapters.in.web.exception;
 
+import br.com.beca.transactions.domain.exception.AccessForbiddenException;
 import br.com.beca.transactions.domain.exception.AccountNotFoundException;
 import br.com.beca.transactions.domain.exception.AccountServiceUnavailableException;
 import br.com.beca.transactions.domain.exception.InvalidTransactionException;
@@ -63,6 +64,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(TransactionNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleTransactionNotFound(TransactionNotFoundException exception) {
         return build(HttpStatus.NOT_FOUND, exception.getMessage());
+    }
+
+    @ExceptionHandler(AccessForbiddenException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessForbidden(AccessForbiddenException exception) {
+        return build(HttpStatus.FORBIDDEN, exception.getMessage());
     }
 
     @ExceptionHandler(AccountNotFoundException.class)

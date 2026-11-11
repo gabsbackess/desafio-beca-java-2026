@@ -12,11 +12,6 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 public record CreateTransactionRequest(
-        @Schema(description = "Id do usuário dono (vindo do MS1). Será trocado pelo usuário autenticado.",
-                example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
-        @NotNull(message = "O usuário é obrigatório.")
-        UUID userId,
-
         @Schema(description = "DEPOSIT, WITHDRAWAL, TRANSFER ou PURCHASE", example = "PURCHASE")
         @NotNull(message = "O tipo da transação é obrigatório.")
         TransactionType type,
