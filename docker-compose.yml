@@ -50,6 +50,27 @@ services:
         condition: service_healthy
     restart: on-failure
 
+  # Microsserviço de transações
+  transactions:
+    build:
+      context: ./transactions
+      dockerfile: Dockerfile
+    container_name: transactions-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://transactions-db:5432/${TRANSACTIONS_DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${TRANSACTIONS_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${TRANSACTIONS_DB_PASSWORD}
+      MOCKAPI_URL: ${MOCKAPI_URL}
+      USERS_URL: http://users:8081
+    depends_on:
+      transactions-db:
+        condition: service_healthy
+      users:
+        condition: service_started
+    restart: on-failure
+
 volumes:
   users-db-data:
   transactions-db-data:
