@@ -1,0 +1,8 @@
+[
+  {
+    "userId": "COLE-AQUI-O-UUID-DO-USUARIO-NO-MS1",
+    "balance": 2000,
+    "perTransactionLimit": 500,
+    "dailyLimit": 1000
+  }
+]

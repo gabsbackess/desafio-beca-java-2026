@@ -14,6 +14,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -53,6 +54,16 @@ public class TransactionEntity {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(precision = 19, scale = 6)
+    private BigDecimal usdRate;
+
+    private LocalDate usdRateDate;
+
+    @Column(precision = 19, scale = 6)
+    private BigDecimal eurRate;
+
+    private LocalDate eurRateDate;
+
     public TransactionEntity() {
     }
 
@@ -76,4 +87,12 @@ public class TransactionEntity {
     public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public BigDecimal getUsdRate() { return usdRate; }
+    public void setUsdRate(BigDecimal usdRate) { this.usdRate = usdRate; }
+    public LocalDate getUsdRateDate() { return usdRateDate; }
+    public void setUsdRateDate(LocalDate usdRateDate) { this.usdRateDate = usdRateDate; }
+    public BigDecimal getEurRate() { return eurRate; }
+    public void setEurRate(BigDecimal eurRate) { this.eurRate = eurRate; }
+    public LocalDate getEurRateDate() { return eurRateDate; }
+    public void setEurRateDate(LocalDate eurRateDate) { this.eurRateDate = eurRateDate; }
 }

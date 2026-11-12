@@ -1,0 +1,3 @@
+# Certificados da sua rede/empresa ficam só na sua máquina (não vão para o Git)
+certs/*
+!certs/.gitkeep

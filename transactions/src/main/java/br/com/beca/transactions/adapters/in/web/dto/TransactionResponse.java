@@ -6,6 +6,7 @@ import br.com.beca.transactions.domain.model.TransactionType;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public record TransactionResponse(
@@ -18,5 +19,8 @@ public record TransactionResponse(
         String description,
         TransactionStatus status,
         String rejectionReason,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt,
+        boolean conversionAvailable,
+        String conversionNote,
+        List<ConversionResponse> conversions) {
 }

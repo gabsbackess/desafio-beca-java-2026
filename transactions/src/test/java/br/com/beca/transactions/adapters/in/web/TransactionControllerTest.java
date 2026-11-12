@@ -19,6 +19,8 @@ import br.com.beca.transactions.domain.exception.TransactionNotFoundException;
 import br.com.beca.transactions.domain.model.AccountLimits;
 import br.com.beca.transactions.domain.model.AuthenticatedUser;
 import br.com.beca.transactions.domain.model.Category;
+import br.com.beca.transactions.domain.model.Currency;
+import br.com.beca.transactions.domain.model.ExchangeRate;
 import br.com.beca.transactions.domain.model.Transaction;
 import br.com.beca.transactions.domain.model.TransactionStatus;
 import br.com.beca.transactions.domain.model.TransactionType;
@@ -86,9 +88,9 @@ class TransactionControllerTest {
         return httpBasic(EMAIL, PASSWORD);
     }
 
-    private static Transaction transaction(TransactionStatus status, String reason) {
+    private static Transaction transaction(TransactionStatus status, String reason, List<ExchangeRate> rates) {
         return new Transaction(Ids.TX_ID, Ids.USER, null, TransactionType.PURCHASE, new BigDecimal("89.90"),
-                Category.FOOD, "mercado", status, reason, LocalDateTime.of(2026, 11, 10, 10, 0));
+                Category.FOOD, "mercado", status, reason, LocalDateTime.of(2026, 11, 10, 10, 0), rates);
     }
 
     private static String validBody() {
@@ -131,7 +133,7 @@ class TransactionControllerTest {
     @Test
     void shouldCreateTransactionForTheAuthenticatedUser() throws Exception {
         when(createTransactionUseCase.create(any(CreateTransactionCommand.class)))
-                .thenReturn(transaction(TransactionStatus.APPROVED, null));
+                .thenReturn(transaction(TransactionStatus.APPROVED, null, List.of()));
 
         mockMvc.perform(post("/transactions").with(maria())
                         .contentType(MediaType.APPLICATION_JSON).content(validBody()))
@@ -147,7 +149,7 @@ class TransactionControllerTest {
     @Test
     void shouldIgnoreUserIdSentInTheBodyAndUseTheAuthenticatedUser() throws Exception {
         when(createTransactionUseCase.create(any(CreateTransactionCommand.class)))
-                .thenReturn(transaction(TransactionStatus.APPROVED, null));
+                .thenReturn(transaction(TransactionStatus.APPROVED, null, List.of()));
 
         mockMvc.perform(post("/transactions").with(maria()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"userId\":\"%s\",\"type\":\"DEPOSIT\",\"amount\":10}".formatted(Ids.OTHER_USER)))
@@ -161,7 +163,7 @@ class TransactionControllerTest {
     @Test
     void shouldReturn201WithReasonWhenTransactionIsRejected() throws Exception {
         when(createTransactionUseCase.create(any(CreateTransactionCommand.class)))
-                .thenReturn(transaction(TransactionStatus.REJECTED, "Saldo insuficiente."));
+                .thenReturn(transaction(TransactionStatus.REJECTED, "Saldo insuficiente.", List.of()));
 
         mockMvc.perform(post("/transactions").with(maria())
                         .contentType(MediaType.APPLICATION_JSON).content(validBody()))
@@ -209,14 +211,35 @@ class TransactionControllerTest {
     // ----- consulta e conversão -----
 
     @Test
-    void shouldReturnTheTransactionOfTheAuthenticatedUser() throws Exception {
+    void shouldReturnTransactionWithConvertedValuesRateAndDate() throws Exception {
+        List<ExchangeRate> rates = List.of(
+                new ExchangeRate(Currency.USD, new BigDecimal("5.00"), LocalDate.of(2026, 11, 10)),
+                new ExchangeRate(Currency.EUR, new BigDecimal("6.00"), LocalDate.of(2026, 11, 9)));
         when(getTransactionUseCase.findById(Ids.TX_ID, Ids.USER))
-                .thenReturn(transaction(TransactionStatus.APPROVED, null));
+                .thenReturn(transaction(TransactionStatus.APPROVED, null, rates));
 
         mockMvc.perform(get("/transactions/{id}", Ids.TX_ID).with(maria()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.amount").value(89.90))
-                .andExpect(jsonPath("$.status").value("APPROVED"));
+                .andExpect(jsonPath("$.conversionAvailable").value(true))
+                .andExpect(jsonPath("$.conversions[0].currency").value("USD"))
+                .andExpect(jsonPath("$.conversions[0].rate").value(5.00))
+                .andExpect(jsonPath("$.conversions[0].rateDate").value("2026-11-10"))
+                .andExpect(jsonPath("$.conversions[0].convertedAmount").value(17.98))
+                .andExpect(jsonPath("$.conversions[1].currency").value("EUR"))
+                .andExpect(jsonPath("$.conversions[1].convertedAmount").value(14.98));
+    }
+
+    @Test
+    void shouldSignalThatConversionIsUnavailableWhenThereAreNoRates() throws Exception {
+        when(getTransactionUseCase.findById(Ids.TX_ID, Ids.USER))
+                .thenReturn(transaction(TransactionStatus.APPROVED, null, List.of()));
+
+        mockMvc.perform(get("/transactions/{id}", Ids.TX_ID).with(maria()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.conversionAvailable").value(false))
+                .andExpect(jsonPath("$.conversionNote").exists())
+                .andExpect(jsonPath("$.conversions.length()").value(0));
     }
 
     @Test
@@ -253,7 +276,7 @@ class TransactionControllerTest {
     void shouldListOwnTransactionsWithFilters() throws Exception {
         when(listTransactionsUseCase.list(eq(Ids.USER), eq(LocalDate.of(2026, 11, 1)),
                 eq(LocalDate.of(2026, 11, 30)), eq(TransactionType.PURCHASE)))
-                .thenReturn(List.of(transaction(TransactionStatus.APPROVED, null)));
+                .thenReturn(List.of(transaction(TransactionStatus.APPROVED, null, List.of())));
 
         mockMvc.perform(get("/transactions").with(maria())
                         .param("from", "2026-11-01")
