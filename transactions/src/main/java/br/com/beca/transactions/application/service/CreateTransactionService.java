@@ -3,24 +3,32 @@ package br.com.beca.transactions.application.service;
 import br.com.beca.transactions.application.port.in.CreateTransactionCommand;
 import br.com.beca.transactions.application.port.in.CreateTransactionUseCase;
 import br.com.beca.transactions.application.port.out.AccountLimitsPort;
+import br.com.beca.transactions.application.port.out.ExchangeRatePort;
 import br.com.beca.transactions.application.port.out.TransactionRepositoryPort;
 import br.com.beca.transactions.application.port.out.UserLookupPort;
 import br.com.beca.transactions.domain.exception.AccountNotFoundException;
 import br.com.beca.transactions.domain.exception.AccountServiceUnavailableException;
+import br.com.beca.transactions.domain.exception.ExchangeRateUnavailableException;
 import br.com.beca.transactions.domain.exception.UserServiceUnavailableException;
 import br.com.beca.transactions.domain.model.AccountLimits;
 import br.com.beca.transactions.domain.model.ApprovalDecision;
+import br.com.beca.transactions.domain.model.ExchangeRate;
 import br.com.beca.transactions.domain.model.Transaction;
 import br.com.beca.transactions.domain.model.TransactionPolicy;
 import br.com.beca.transactions.domain.model.TransactionRequest;
 import br.com.beca.transactions.domain.model.TransactionType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Service
 public class CreateTransactionService implements CreateTransactionUseCase {
@@ -37,19 +45,31 @@ public class CreateTransactionService implements CreateTransactionUseCase {
     public static final String DESTINATION_CHECK_UNAVAILABLE =
             "Serviço de usuários indisponível no momento. Tente novamente mais tarde.";
 
+    private static final Logger log = LoggerFactory.getLogger(CreateTransactionService.class);
+
     private final TransactionRepositoryPort transactionRepositoryPort;
     private final AccountLimitsPort accountLimitsPort;
     private final UserLookupPort userLookupPort;
+    private final ExchangeRatePort exchangeRatePort;
     private final Clock clock;
     private final TransactionPolicy policy = new TransactionPolicy();
+
+    /**
+     * Uma trava por usuário: duas operações do mesmo usuário não rodam ao mesmo tempo, então a leitura do saldo e a
+     * atualização não se cruzam (evita duas compras simultâneas passarem do saldo). A API Mock não oferece
+     * atualização condicional; a trava vale para uma instância do serviço.
+     */
+    private final ConcurrentHashMap<UUID, ReentrantLock> userLocks = new ConcurrentHashMap<>();
 
     public CreateTransactionService(TransactionRepositoryPort transactionRepositoryPort,
                                     AccountLimitsPort accountLimitsPort,
                                     UserLookupPort userLookupPort,
+                                    ExchangeRatePort exchangeRatePort,
                                     Clock clock) {
         this.transactionRepositoryPort = transactionRepositoryPort;
         this.accountLimitsPort = accountLimitsPort;
         this.userLookupPort = userLookupPort;
+        this.exchangeRatePort = exchangeRatePort;
         this.clock = clock;
     }
 
@@ -64,13 +84,43 @@ public class CreateTransactionService implements CreateTransactionUseCase {
                 command.destinationUserId());
 
         LocalDateTime now = LocalDateTime.now(clock);
-        ApprovalDecision decision = decide(request, now.toLocalDate());
-        if (decision.isApproved()) {
-            // Só depois de aprovar o saldo da conta é atualizado na API Mock.
-            decision = applyBalanceChange(request);
-        }
+        // A cotação é buscada antes da trava: é uma chamada externa e não depende do saldo.
+        List<ExchangeRate> rates = findRates(now.toLocalDate());
 
-        return transactionRepositoryPort.save(Transaction.from(request, decision, now));
+        ReentrantLock lock = userLocks.computeIfAbsent(request.userId(), id -> new ReentrantLock());
+        lock.lock();
+        try {
+            ApprovalDecision decision = decide(request, now.toLocalDate());
+            boolean balanceChanged = false;
+            if (decision.isApproved()) {
+                // Só depois de aprovar o saldo da conta é atualizado na API Mock.
+                decision = applyBalanceChange(request);
+                balanceChanged = decision.isApproved();
+            }
+
+            Transaction transaction = Transaction.from(request, decision, now).withExchangeRates(rates);
+            try {
+                return transactionRepositoryPort.save(transaction);
+            } catch (RuntimeException exception) {
+                // O saldo já mudou na API Mock e a transação não foi gravada: desfaz a alteração.
+                if (balanceChanged) {
+                    undoBalanceChange(request);
+                }
+                throw exception;
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** A taxa fica gravada na transação. Se a BrasilAPI falhar, a transação segue sem conversão. */
+    private List<ExchangeRate> findRates(LocalDate day) {
+        try {
+            return exchangeRatePort.findRates(day);
+        } catch (ExchangeRateUnavailableException exception) {
+            log.warn("Câmbio indisponível: {}", exception.getMessage(), exception);
+            return List.of();
+        }
     }
 
     private ApprovalDecision decide(TransactionRequest request, LocalDate today) {
@@ -111,14 +161,32 @@ public class CreateTransactionService implements CreateTransactionUseCase {
 
     /** Retirada, transferência e compra debitam; depósito credita. Se a atualização falhar, rejeita. */
     private ApprovalDecision applyBalanceChange(TransactionRequest request) {
-        BigDecimal delta = request.type().isOutflow() ? request.amount().negate() : request.amount();
         try {
-            accountLimitsPort.adjustBalance(request.userId(), delta);
+            accountLimitsPort.adjustBalance(request.userId(), balanceDelta(request));
             return ApprovalDecision.approved();
         } catch (AccountNotFoundException exception) {
             return ApprovalDecision.rejected(ACCOUNT_NOT_FOUND);
         } catch (AccountServiceUnavailableException exception) {
             return ApprovalDecision.rejected(ACCOUNT_SERVICE_UNAVAILABLE);
         }
+    }
+
+    /**
+     * Desfaz o ajuste de saldo quando a transação não pôde ser gravada. Se o próprio desfazer falhar, registra no log
+     * o usuário e o valor, para correção manual.
+     */
+    private void undoBalanceChange(TransactionRequest request) {
+        BigDecimal undo = balanceDelta(request).negate();
+        try {
+            accountLimitsPort.adjustBalance(request.userId(), undo);
+            log.warn("Transação não gravada: saldo do usuário {} desfeito ({}).", request.userId(), undo);
+        } catch (RuntimeException exception) {
+            log.error("FALHA ao desfazer o saldo do usuário {} (valor a aplicar: {}). Corrigir manualmente.",
+                    request.userId(), undo, exception);
+        }
+    }
+
+    private static BigDecimal balanceDelta(TransactionRequest request) {
+        return request.type().isOutflow() ? request.amount().negate() : request.amount();
     }
 }

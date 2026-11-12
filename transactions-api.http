@@ -1,0 +1,87 @@
+### Requisições de exemplo do MS2 (IntelliJ HTTP Client).
+### Troque o e-mail e a senha por os de um usuário já cadastrado no MS1 (por exemplo, do CSV de exemplo)
+### e o {{userId}} pelo id dele (veja em POST /users/authenticate).
+
+@ms1 = http://localhost:8081
+@ms2 = http://localhost:8082
+@email = maria.silva@example.com
+@password = Senha@123
+@userId = COLE-AQUI-O-UUID-DO-USUARIO
+
+### MS1: descobrir o id do usuário
+POST {{ms1}}/users/authenticate
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+### Saldo e limites (vindos do MockAPI)
+GET {{ms2}}/accounts/{{userId}}/balance
+Authorization: Basic {{email}} {{password}}
+
+### Depósito
+POST {{ms2}}/transactions
+Authorization: Basic {{email}} {{password}}
+Content-Type: application/json
+
+{
+  "type": "DEPOSIT",
+  "amount": 3000.00,
+  "description": "Salario"
+}
+
+### Compra aprovada
+POST {{ms2}}/transactions
+Authorization: Basic {{email}} {{password}}
+Content-Type: application/json
+
+{
+  "type": "PURCHASE",
+  "amount": 89.90,
+  "category": "FOOD",
+  "description": "Mercado do mes"
+}
+
+### Retirada acima do saldo (volta REJECTED com o motivo)
+POST {{ms2}}/transactions
+Authorization: Basic {{email}} {{password}}
+Content-Type: application/json
+
+{
+  "type": "WITHDRAWAL",
+  "amount": 999999.00,
+  "description": "Saque grande"
+}
+
+### Transferência (informe o id de outro usuário)
+POST {{ms2}}/transactions
+Authorization: Basic {{email}} {{password}}
+Content-Type: application/json
+
+{
+  "type": "TRANSFER",
+  "amount": 100.00,
+  "destinationUserId": "COLE-AQUI-O-UUID-DO-DESTINATARIO",
+  "description": "Pix"
+}
+
+### Consultar uma transação (com valores convertidos)
+GET {{ms2}}/transactions/COLE-AQUI-O-ID-DA-TRANSACAO
+Authorization: Basic {{email}} {{password}}
+
+### Listar as minhas transações do mês, só compras
+GET {{ms2}}/transactions?from=2026-11-01&to=2026-11-30&type=PURCHASE
+Authorization: Basic {{email}} {{password}}
+
+### Análise de despesas (sem datas = mês atual)
+GET {{ms2}}/expenses/summary
+Authorization: Basic {{email}} {{password}}
+
+### Relatório CSV
+GET {{ms2}}/transactions/report?from=2026-11-01&to=2026-11-30
+Authorization: Basic {{email}} {{password}}
+
+### Sem credenciais (deve dar 401)
+GET {{ms2}}/transactions

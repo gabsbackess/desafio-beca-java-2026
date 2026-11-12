@@ -4,13 +4,17 @@ import br.com.beca.transactions.support.Ids;
 import br.com.beca.transactions.application.port.in.CreateTransactionCommand;
 import br.com.beca.transactions.application.port.out.AccountLimitsPort;
 import br.com.beca.transactions.application.port.out.UserLookupPort;
+import br.com.beca.transactions.application.port.out.ExchangeRatePort;
 import br.com.beca.transactions.application.port.out.TransactionRepositoryPort;
 import br.com.beca.transactions.domain.exception.AccountNotFoundException;
 import br.com.beca.transactions.domain.exception.AccountServiceUnavailableException;
+import br.com.beca.transactions.domain.exception.ExchangeRateUnavailableException;
 import br.com.beca.transactions.domain.exception.InvalidTransactionException;
 import br.com.beca.transactions.domain.exception.UserServiceUnavailableException;
 import br.com.beca.transactions.domain.model.AccountLimits;
 import br.com.beca.transactions.domain.model.Category;
+import br.com.beca.transactions.domain.model.Currency;
+import br.com.beca.transactions.domain.model.ExchangeRate;
 import br.com.beca.transactions.domain.model.Transaction;
 import br.com.beca.transactions.domain.model.TransactionPolicy;
 import br.com.beca.transactions.domain.model.TransactionStatus;
@@ -19,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -28,14 +33,23 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -57,13 +71,17 @@ class CreateTransactionServiceTest {
     @Mock
     private UserLookupPort userLookupPort;
 
+    @Mock
+    private ExchangeRatePort exchangeRatePort;
+
     private CreateTransactionService service;
 
     @BeforeEach
     void setUp() {
         Clock clock = Clock.fixed(Instant.parse("2026-11-10T12:00:00Z"),
                 ZoneId.of("America/Sao_Paulo"));
-        service = new CreateTransactionService(transactionRepositoryPort, accountLimitsPort, userLookupPort, clock);
+        service = new CreateTransactionService(transactionRepositoryPort, accountLimitsPort, userLookupPort,
+                exchangeRatePort, clock);
     }
 
     private static BigDecimal bd(String value) {
@@ -183,6 +201,32 @@ class CreateTransactionServiceTest {
 
         assertEquals(TransactionStatus.REJECTED, result.getStatus());
         assertEquals(CreateTransactionService.ACCOUNT_NOT_FOUND, result.getRejectionReason());
+    }
+
+    @Test
+    void shouldStoreExchangeRatesOfTheDayInTheTransaction() {
+        saveReturnsArgument();
+        List<ExchangeRate> rates = List.of(
+                new ExchangeRate(Currency.USD, bd("5.30"), TODAY),
+                new ExchangeRate(Currency.EUR, bd("6.10"), TODAY));
+        when(exchangeRatePort.findRates(TODAY)).thenReturn(rates);
+
+        Transaction result = service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.DEPOSIT, bd("100"), null, "salario", null));
+
+        assertEquals(rates, result.getExchangeRates());
+    }
+
+    @Test
+    void shouldCreateTransactionWithoutConversionWhenExchangeServiceIsDown() {
+        saveReturnsArgument();
+        when(exchangeRatePort.findRates(TODAY)).thenThrow(new ExchangeRateUnavailableException("fora do ar"));
+
+        Transaction result = service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.DEPOSIT, bd("100"), null, "salario", null));
+
+        assertEquals(TransactionStatus.APPROVED, result.getStatus());
+        assertEquals(false, result.hasExchangeRates());
     }
 
     @Test
@@ -318,5 +362,119 @@ class CreateTransactionServiceTest {
                 Ids.USER, TransactionType.PURCHASE, bd("10"), Category.OTHER, "balas", null));
 
         verifyNoInteractions(userLookupPort);
+    }
+
+    @Test
+    void shouldUndoTheBalanceChangeWhenTheTransactionCannotBeSaved() {
+        when(accountLimitsPort.findByUserId(Ids.USER))
+                .thenReturn(new AccountLimits(bd("1000"), bd("500"), bd("800")));
+        when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(BigDecimal.ZERO);
+        RuntimeException failure = new RuntimeException("banco fora do ar");
+        when(transactionRepositoryPort.save(any(Transaction.class))).thenThrow(failure);
+
+        RuntimeException thrown = assertThrows(RuntimeException.class, () -> service.create(
+                new CreateTransactionCommand(Ids.USER, TransactionType.PURCHASE, bd("100"), Category.FOOD, "jantar", null)));
+
+        assertSame(failure, thrown);
+        InOrder order = inOrder(accountLimitsPort);
+        order.verify(accountLimitsPort).adjustBalance(eq(Ids.USER), argThat(delta -> delta.compareTo(bd("-100")) == 0));
+        order.verify(accountLimitsPort).adjustBalance(eq(Ids.USER), argThat(delta -> delta.compareTo(bd("100")) == 0));
+    }
+
+    @Test
+    void shouldUndoTheCreditWhenADepositCannotBeSaved() {
+        when(transactionRepositoryPort.save(any(Transaction.class))).thenThrow(new RuntimeException("banco fora do ar"));
+
+        assertThrows(RuntimeException.class, () -> service.create(
+                new CreateTransactionCommand(Ids.USER, TransactionType.DEPOSIT, bd("300"), null, "salario", null)));
+
+        verify(accountLimitsPort).adjustBalance(eq(Ids.USER), argThat(delta -> delta.compareTo(bd("300")) == 0));
+        verify(accountLimitsPort).adjustBalance(eq(Ids.USER), argThat(delta -> delta.compareTo(bd("-300")) == 0));
+    }
+
+    @Test
+    void shouldNotTouchTheBalanceWhenARejectedTransactionCannotBeSaved() {
+        when(accountLimitsPort.findByUserId(Ids.USER))
+                .thenReturn(new AccountLimits(bd("100"), bd("1000"), bd("1000")));
+        when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(BigDecimal.ZERO);
+        when(transactionRepositoryPort.save(any(Transaction.class))).thenThrow(new RuntimeException("banco fora do ar"));
+
+        assertThrows(RuntimeException.class, () -> service.create(
+                new CreateTransactionCommand(Ids.USER, TransactionType.WITHDRAWAL, bd("150"), null, "saque", null)));
+
+        verify(accountLimitsPort, never()).adjustBalance(any(), any());
+    }
+
+    @Test
+    void shouldKeepTheOriginalErrorWhenUndoingTheBalanceAlsoFails() {
+        when(accountLimitsPort.findByUserId(Ids.USER))
+                .thenReturn(new AccountLimits(bd("1000"), bd("500"), bd("800")));
+        when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(BigDecimal.ZERO);
+        RuntimeException failure = new RuntimeException("banco fora do ar");
+        when(transactionRepositoryPort.save(any(Transaction.class))).thenThrow(failure);
+        // 1ª chamada (o débito) funciona; 2ª chamada (o desfazer) falha.
+        doNothing().doThrow(new AccountServiceUnavailableException("fora do ar"))
+                .when(accountLimitsPort).adjustBalance(any(), any());
+
+        RuntimeException thrown = assertThrows(RuntimeException.class, () -> service.create(
+                new CreateTransactionCommand(Ids.USER, TransactionType.PURCHASE, bd("50"), Category.FOOD, "lanche", null)));
+
+        assertSame(failure, thrown);
+    }
+
+    /** Conta simulada que lê e grava devagar, para expor a corrida se a trava não existisse. */
+    private static final class SlowAccount implements AccountLimitsPort {
+        private volatile BigDecimal balance;
+
+        private SlowAccount(BigDecimal balance) {
+            this.balance = balance;
+        }
+
+        @Override
+        public AccountLimits findByUserId(UUID userId) {
+            AccountLimits limits = new AccountLimits(balance, bd("1000"), bd("1000"));
+            pause();
+            return limits;
+        }
+
+        @Override
+        public void adjustBalance(UUID userId, BigDecimal delta) {
+            BigDecimal current = balance;
+            pause();
+            balance = current.add(delta);
+        }
+
+        private static void pause() {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    @Test
+    void shouldNotLetTwoSimultaneousPurchasesOfTheSameUserExceedTheBalance() throws Exception {
+        saveReturnsArgument();
+        when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(BigDecimal.ZERO);
+        SlowAccount account = new SlowAccount(bd("100"));
+        Clock clock = Clock.fixed(Instant.parse("2026-11-10T12:00:00Z"), ZoneId.of("America/Sao_Paulo"));
+        CreateTransactionService concurrent = new CreateTransactionService(
+                transactionRepositoryPort, account, userLookupPort, exchangeRatePort, clock);
+
+        Callable<Transaction> purchase = () -> concurrent.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.PURCHASE, bd("80"), Category.FOOD, "compra", null));
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Transaction> first = pool.submit(purchase);
+            Future<Transaction> second = pool.submit(purchase);
+            List<TransactionStatus> statuses = List.of(first.get().getStatus(), second.get().getStatus());
+
+            assertEquals(1, statuses.stream().filter(s -> s == TransactionStatus.APPROVED).count());
+            assertEquals(1, statuses.stream().filter(s -> s == TransactionStatus.REJECTED).count());
+            assertEquals(0, bd("20").compareTo(account.balance));
+        } finally {
+            pool.shutdownNow();
+        }
     }
 }
