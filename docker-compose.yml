@@ -42,6 +42,7 @@ services:
     ports:
       - "8081:8081"
     environment:
+      TZ: America/Sao_Paulo
       SPRING_DATASOURCE_URL: jdbc:postgresql://users-db:5432/${USER_DB_NAME}
       SPRING_DATASOURCE_USERNAME: ${USER_DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${USER_DB_PASSWORD}
