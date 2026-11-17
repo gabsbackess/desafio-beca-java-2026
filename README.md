@@ -25,8 +25,8 @@ O sistema é composto por microsserviços independentes, cada um com seu própri
 
 | Serviço | Responsabilidade | Situação |
 |---|---|---|
-| **MS1 – Usuários** | Cadastro, consulta, atualização, exclusão e importação de usuários por CSV | Pronto |
-| **MS2 – Transações** | Depósitos, retiradas, transferências e compras; saldo e limites (API Mock); câmbio (BrasilAPI); análise de despesas; relatório CSV; autenticação básica validada no MS1 | Pronto |
+| **MS1 – Usuários** | Cadastro, consulta, atualização, exclusão e importação de usuários por CSV; autenticação básica para listar, alterar e excluir | Pronto |
+| **MS2 – Transações** | Depósitos, retiradas, transferências (com crédito no destino) e compras; saldo e limites (API Mock); câmbio (BrasilAPI); análise de despesas; relatório CSV; autenticação básica validada no MS1 | Pronto |
 
 Os dois serviços seguem a **arquitetura hexagonal**: o domínio e os casos de uso não dependem de framework web nem de banco; quem fala com o mundo externo são os adaptadores, ligados por portas (interfaces).
 
@@ -184,6 +184,7 @@ Definidas no `.env` (modelo em `.env.example`):
 | `TRANSACTIONS_DB_USER` | Usuário do banco do MS2 |
 | `TRANSACTIONS_DB_PASSWORD` | Senha do banco do MS2 |
 | `MOCKAPI_URL` | URL base do projeto no MockAPI, sem barra no final (por exemplo `https://xxxx.mockapi.io/api/v1`) |
+| `INTERNAL_API_KEY` | Chave que o MS2 envia ao MS1 (cabeçalho `X-Internal-Key`) para consultar `GET /users/{id}`. Obrigatória no Compose; use um texto longo e aleatório |
 
 Dentro do Compose, cada serviço recebe a URL, o usuário e a senha do banco por variáveis `SPRING_DATASOURCE_*`, e o MS2 recebe também `MOCKAPI_URL` e `USERS_URL`. Rodando fora do Docker (IDE ou `./mvnw`), o `application.properties` usa `localhost:5433` (MS1) e `localhost:5434` (MS2) e lê as variáveis acima do ambiente. Opcionalmente, `USERS_URL` (padrão `http://localhost:8081`) e `BRASILAPI_URL` (padrão `https://brasilapi.com.br`) podem ser trocadas.
 
@@ -195,15 +196,17 @@ URL base: `http://localhost:8081`
 
 **Swagger (OpenAPI):** `http://localhost:8081/swagger-ui.html` — documenta todos os endpoints, com exemplos de requisição e resposta, e permite testá-los pelo navegador.
 
-| Método | Rota | Descrição | Sucesso |
-|---|---|---|---|
-| POST | `/users` | Cadastrar usuário | 201 |
-| GET | `/users` | Listar usuários | 200 |
-| GET | `/users/{id}` | Buscar usuário pelo id (UUID) | 200 |
-| PUT | `/users/{id}` | Atualizar usuário | 200 |
-| DELETE | `/users/{id}` | Excluir usuário | 204 |
-| POST | `/users/import` | Importar usuários por CSV | 200 |
-| POST | `/users/authenticate` | Conferir e-mail e senha (usado pelo MS2) | 200 |
+| Método | Rota | Autenticação | Descrição | Sucesso |
+|---|---|---|---|---|
+| POST | `/users` | aberta | Cadastrar usuário | 201 |
+| GET | `/users` | **Basic Auth** | Listar usuários | 200 |
+| GET | `/users/{id}` | **Basic Auth** (ou chave interna do MS2) | Buscar usuário pelo id (UUID) | 200 |
+| PUT | `/users/{id}` | **Basic Auth**, só o próprio usuário | Atualizar usuário | 200 |
+| DELETE | `/users/{id}` | **Basic Auth**, só o próprio usuário | Excluir usuário | 204 |
+| POST | `/users/import` | aberta | Importar usuários por CSV | 200 |
+| POST | `/users/authenticate` | aberta | Conferir e-mail e senha (usado pelo MS2) | 200 |
+
+**Autenticação no MS1.** Listar, buscar, alterar e excluir exigem autenticação básica (HTTP Basic) com o e-mail e a senha do usuário. No Swagger, use o botão **Authorize**. Sem credenciais, ou com credenciais erradas, a resposta é 401. Alterar e excluir valem **só para o próprio usuário**: tentar mexer em outro `id` responde 403 `Você só pode alterar ou excluir o seu próprio usuário.` O cadastro, a importação por CSV, `/users/authenticate` e o Swagger continuam abertos. O MS2 consulta `GET /users/{id}` (para conferir o destino de uma transferência) enviando a chave interna `X-Internal-Key`, com o valor de `INTERNAL_API_KEY`; essa chave só abre essa rota e não dá acesso a listar, alterar nem excluir.
 
 **Regras de negócio**
 
@@ -338,7 +341,9 @@ Resposta (201), já com a conversão em dólar e euro:
 
 **Saldo atualizado.** Depois de aprovar, o MS2 atualiza a conta no MockAPI (`PUT /accounts/{id}`): retirada, transferência e compra debitam o saldo, e o depósito credita. Transação rejeitada não mexe no saldo. Se a atualização falhar, a transação é rejeitada e gravada com o motivo, em vez de ficar aprovada com o saldo desatualizado.
 
-**Destino da transferência.** Antes de aprovar, o MS2 confere no MS1 (`GET /users/{id}`) se o usuário de destino existe. Se não existir, a transação é rejeitada com `Usuário de destino não encontrado.`; se o MS1 estiver fora do ar, com `Serviço de usuários indisponível no momento. Tente novamente mais tarde.`
+**Destino da transferência.** Antes de aprovar, o MS2 confere no MS1 (`GET /users/{id}`, com a chave interna) se o usuário de destino existe e no MockAPI se ele tem conta. Se o usuário não existir, a transação é rejeitada com `Usuário de destino não encontrado.`; se não tiver conta, com `Conta do usuário de destino não encontrada no serviço de saldo.`; se o MS1 estiver fora do ar, com `Serviço de usuários indisponível no momento. Tente novamente mais tarde.`
+
+**Crédito no destino.** Ao aprovar uma transferência, o MS2 debita a conta de quem envia e **credita a conta do destinatário** no MockAPI. Como a API Mock não tem operação atômica entre duas contas, o MS2 faz duas atualizações em sequência e compensa as falhas: se o crédito falhar, o débito é desfeito e a transação é gravada como rejeitada com o motivo; se a gravação da transação falhar depois dos dois ajustes, os dois são desfeitos. Se algum desfazer também falhar, o log registra o usuário e o valor (`FALHA ao desfazer o saldo...`) para correção manual. Para duas transferências em sentidos opostos não travarem uma à outra, o MS2 trava as duas contas sempre na mesma ordem (pelo id).
 
 **Nada é apagado.** Não existe rota de exclusão nem de alteração. Para corrigir um lançamento, registra-se uma nova transação (por exemplo, um depósito para estornar uma retirada errada).
 
@@ -399,11 +404,13 @@ Pontos em que o pedido do PO deixava a decisão para o time:
 | Como o MS2 confirma o usuário no MS1 | Pela rota `POST /users/authenticate`, pela rede do Compose; o `id` devolvido identifica o dono das transações. |
 | Categorias de despesa | Lista fixa, definida pelo time (enum): alimentação, transporte, moradia, saúde, educação, lazer, compras e outros. Retirada e transferência entram em `OTHER` quando não informam categoria. |
 | Saldo na API Mock | Depois de aprovar, o MS2 atualiza a conta no MockAPI (debita saídas, credita depósitos). Se a atualização falhar, a transação é rejeitada com o motivo. |
-| Transferência (limitação conhecida) | O usuário de destino precisa existir no MS1 (conferido em `GET /users/{id}`). O MS2 **debita** a conta de quem envia e **não credita** a do destinatário. Motivo: a API Mock não tem uma operação atômica entre duas contas, e fazer dois `PUT` seguidos deixaria os saldos inconsistentes se o segundo falhasse. A transação guarda o `destinationUserId`, então o crédito pode ser feito depois (por exemplo, por um processo que leia as transferências aprovadas). Em produção, o saldo ficaria no banco do próprio serviço e a transferência seria uma única transação. |
+| Transferência e crédito no destino | O destino precisa existir no MS1 e ter conta no MockAPI. O MS2 debita quem envia e credita o destinatário. A API Mock não tem operação atômica entre duas contas; por isso o MS2 faz os dois `PUT` em sequência e, se algo falhar, desfaz o que já foi aplicado (compensação). Fica uma janela curta em que, se o próprio desfazer falhar, o saldo precisa de correção manual (o log avisa). Em produção, o saldo ficaria no banco do próprio serviço e a transferência seria uma única transação. |
+| Como o MS2 consulta o MS1 com a rota protegida | `GET /users/{id}` passou a exigir autenticação. O MS2 não guarda a senha de ninguém, então se identifica como serviço com uma chave interna (`X-Internal-Key`, variável `INTERNAL_API_KEY`). A chave só vale para essa rota. |
+| Quem altera ou exclui usuários | Só o próprio usuário autenticado (403 para os demais). Não há perfil de administrador. |
 | Concorrência no saldo | O saldo é lido e depois atualizado na API Mock, que não oferece atualização condicional. Para duas compras simultâneas não passarem do saldo, o MS2 usa uma trava por usuário: as operações do mesmo usuário rodam uma de cada vez (operações de usuários diferentes continuam em paralelo). A trava vale para uma instância do serviço; com várias instâncias seria preciso uma atualização condicional (versão do registro) ou o saldo no banco. |
 | Falha ao gravar a transação | Se o saldo já foi atualizado na API Mock e a gravação da transação falha, o MS2 desfaz o ajuste de saldo (operação inversa) e devolve o erro. Se o próprio desfazer falhar, o log registra o usuário e o valor (`FALHA ao desfazer o saldo...`) para correção manual. |
 | Fuso horário | O "dia" do limite diário e das análises é o de São Paulo (`America/Sao_Paulo`), configurável em `app.timezone`, e não o do servidor. |
-| Segurança | Autenticação básica (obrigatória); JWT fica como bônus. As rotas de usuários do MS1 não exigem autenticação, como pediu o PO. |
+| Segurança | Autenticação básica (obrigatória); JWT fica como bônus. No MS1, listar, buscar, alterar e excluir exigem autenticação; cadastro, importação por CSV e `/users/authenticate` ficam abertos. |
 
 ## Roteiro de demonstração
 
@@ -436,8 +443,8 @@ O relatório de cobertura (JaCoCo) fica em `users/target/site/jacoco/index.html`
 | 201 Created | Usuário cadastrado; transação registrada (aprovada ou rejeitada) |
 | 204 No Content | Usuário excluído |
 | 400 Bad Request | Dados inválidos, JSON quebrado, id inválido, CSV inválido |
-| 401 Unauthorized | E-mail ou senha inválidos em `/users/authenticate`; no MS2, credenciais ausentes ou inválidas |
-| 403 Forbidden | MS2: tentativa de acessar transações ou saldo de outro usuário |
+| 401 Unauthorized | E-mail ou senha inválidos em `/users/authenticate`; MS1: credenciais ausentes ou inválidas em listar, buscar, alterar e excluir; MS2: credenciais ausentes ou inválidas |
+| 403 Forbidden | MS1: alterar ou excluir outro usuário; MS2: tentativa de acessar transações ou saldo de outro usuário |
 | 404 Not Found | Usuário ou rota não encontrados |
 | 405 / 415 | Método HTTP ou tipo de conteúdo não suportado |
 | 409 Conflict | CPF ou e-mail já cadastrado |

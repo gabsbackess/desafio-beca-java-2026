@@ -1,6 +1,8 @@
 package br.com.beca.users.adapters.in.web.csv;
 
 import br.com.beca.users.adapters.in.web.exception.GlobalExceptionHandler;
+import br.com.beca.users.adapters.in.web.security.SecurityConfig;
+import br.com.beca.users.adapters.in.web.security.UsersAuthenticationProvider;
 import br.com.beca.users.application.port.in.ImportUsersCsvResponse;
 import br.com.beca.users.application.port.in.ImportUsersCsvUseCase;
 import br.com.beca.users.domain.exception.InvalidCsvException;
@@ -22,12 +24,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(UserCsvController.class)
-@Import(GlobalExceptionHandler.class)
+@Import({GlobalExceptionHandler.class, SecurityConfig.class})
 class UserCsvControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
 
+    @MockitoBean
+    private UsersAuthenticationProvider authenticationProvider;
     @MockitoBean
     private ImportUsersCsvUseCase importUsersCsvUseCase;
 

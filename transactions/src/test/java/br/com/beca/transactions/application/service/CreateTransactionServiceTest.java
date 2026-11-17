@@ -88,6 +88,11 @@ class CreateTransactionServiceTest {
         return new BigDecimal(value);
     }
 
+    private void destinationHasAccount() {
+        when(accountLimitsPort.findByUserId(Ids.OTHER_USER))
+                .thenReturn(new AccountLimits(bd("10"), bd("1000"), bd("1000")));
+    }
+
     private void saveReturnsArgument() {
         when(transactionRepositoryPort.save(any(Transaction.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -163,6 +168,7 @@ class CreateTransactionServiceTest {
     void shouldRejectWhenDailyLimitIsExceededByTodaysApprovedExpenses() {
         saveReturnsArgument();
         when(userLookupPort.exists(Ids.OTHER_USER)).thenReturn(true);
+        destinationHasAccount();
         when(accountLimitsPort.findByUserId(Ids.USER))
                 .thenReturn(new AccountLimits(bd("1000"), bd("500"), bd("800")));
         when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(bd("700"));
@@ -311,9 +317,10 @@ class CreateTransactionServiceTest {
     }
 
     @Test
-    void shouldApproveTransferToAnExistingUserAndDebitTheSender() {
+    void shouldApproveTransferDebitTheSenderAndCreditTheDestination() {
         saveReturnsArgument();
         when(userLookupPort.exists(Ids.OTHER_USER)).thenReturn(true);
+        destinationHasAccount();
         when(accountLimitsPort.findByUserId(Ids.USER))
                 .thenReturn(new AccountLimits(bd("1000"), bd("500"), bd("800")));
         when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(BigDecimal.ZERO);
@@ -322,7 +329,63 @@ class CreateTransactionServiceTest {
                 Ids.USER, TransactionType.TRANSFER, bd("200"), null, "pix", Ids.OTHER_USER));
 
         assertEquals(TransactionStatus.APPROVED, result.getStatus());
+        InOrder order = inOrder(accountLimitsPort);
+        order.verify(accountLimitsPort).adjustBalance(eq(Ids.USER), argThat(delta -> delta.compareTo(bd("-200")) == 0));
+        order.verify(accountLimitsPort).adjustBalance(eq(Ids.OTHER_USER), argThat(delta -> delta.compareTo(bd("200")) == 0));
+    }
+
+    @Test
+    void shouldRejectTransferWhenTheDestinationHasNoAccountAndNotTouchAnyBalance() {
+        saveReturnsArgument();
+        when(userLookupPort.exists(Ids.OTHER_USER)).thenReturn(true);
+        when(accountLimitsPort.findByUserId(Ids.OTHER_USER))
+                .thenThrow(new AccountNotFoundException("sem conta"));
+
+        Transaction result = service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.TRANSFER, bd("200"), null, "pix", Ids.OTHER_USER));
+
+        assertEquals(TransactionStatus.REJECTED, result.getStatus());
+        assertEquals(CreateTransactionService.DESTINATION_ACCOUNT_NOT_FOUND, result.getRejectionReason());
+        verify(accountLimitsPort, never()).adjustBalance(any(), any());
+    }
+
+    @Test
+    void shouldRejectTransferAndUndoTheDebitWhenTheCreditFails() {
+        saveReturnsArgument();
+        when(userLookupPort.exists(Ids.OTHER_USER)).thenReturn(true);
+        destinationHasAccount();
+        when(accountLimitsPort.findByUserId(Ids.USER))
+                .thenReturn(new AccountLimits(bd("1000"), bd("500"), bd("800")));
+        when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(BigDecimal.ZERO);
+        // O débito de quem envia (e o desfazer dele) funciona; só o crédito no destino falha.
+        doNothing().when(accountLimitsPort).adjustBalance(eq(Ids.USER), any());
+        doThrow(new AccountServiceUnavailableException("fora do ar"))
+                .when(accountLimitsPort).adjustBalance(eq(Ids.OTHER_USER), any());
+
+        Transaction result = service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.TRANSFER, bd("200"), null, "pix", Ids.OTHER_USER));
+
+        assertEquals(TransactionStatus.REJECTED, result.getStatus());
+        assertEquals(CreateTransactionService.ACCOUNT_SERVICE_UNAVAILABLE, result.getRejectionReason());
         verify(accountLimitsPort).adjustBalance(eq(Ids.USER), argThat(delta -> delta.compareTo(bd("-200")) == 0));
+        verify(accountLimitsPort).adjustBalance(eq(Ids.USER), argThat(delta -> delta.compareTo(bd("200")) == 0));
+    }
+
+    @Test
+    void shouldUndoBothAccountsWhenAnApprovedTransferCannotBeSaved() {
+        when(userLookupPort.exists(Ids.OTHER_USER)).thenReturn(true);
+        destinationHasAccount();
+        when(accountLimitsPort.findByUserId(Ids.USER))
+                .thenReturn(new AccountLimits(bd("1000"), bd("500"), bd("800")));
+        when(transactionRepositoryPort.sumApprovedExpensesOn(Ids.USER, TODAY)).thenReturn(BigDecimal.ZERO);
+        when(transactionRepositoryPort.save(any(Transaction.class))).thenThrow(new RuntimeException("banco fora do ar"));
+
+        assertThrows(RuntimeException.class, () -> service.create(new CreateTransactionCommand(
+                Ids.USER, TransactionType.TRANSFER, bd("200"), null, "pix", Ids.OTHER_USER)));
+
+        verify(accountLimitsPort).adjustBalance(eq(Ids.OTHER_USER), argThat(delta -> delta.compareTo(bd("200")) == 0));
+        verify(accountLimitsPort).adjustBalance(eq(Ids.OTHER_USER), argThat(delta -> delta.compareTo(bd("-200")) == 0));
+        verify(accountLimitsPort, times(2)).adjustBalance(eq(Ids.USER), any());
     }
 
     @Test

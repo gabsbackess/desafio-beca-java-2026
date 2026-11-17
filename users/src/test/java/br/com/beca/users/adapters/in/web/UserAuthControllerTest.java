@@ -2,6 +2,8 @@ package br.com.beca.users.adapters.in.web;
 
 import br.com.beca.users.adapters.in.web.dto.UserWebMapper;
 import br.com.beca.users.adapters.in.web.exception.GlobalExceptionHandler;
+import br.com.beca.users.adapters.in.web.security.SecurityConfig;
+import br.com.beca.users.adapters.in.web.security.UsersAuthenticationProvider;
 import br.com.beca.users.application.port.in.AuthenticateUserUseCase;
 import br.com.beca.users.domain.exception.InvalidCredentialsException;
 import br.com.beca.users.domain.model.User;
@@ -23,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(UserAuthController.class)
-@Import({GlobalExceptionHandler.class, UserWebMapper.class})
+@Import({GlobalExceptionHandler.class, UserWebMapper.class, SecurityConfig.class})
 class UserAuthControllerTest {
 
     private static final UUID ID = UUID.fromString("3fa85f64-5717-4562-b3fc-2c963f66afa6");
@@ -31,6 +33,8 @@ class UserAuthControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @MockitoBean
+    private UsersAuthenticationProvider authenticationProvider;
     @MockitoBean
     private AuthenticateUserUseCase authenticateUserUseCase;
 
