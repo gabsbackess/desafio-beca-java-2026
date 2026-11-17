@@ -3,6 +3,7 @@ package br.com.beca.transactions.adapters.out.auth;
 import br.com.beca.transactions.application.port.out.UserLookupPort;
 import br.com.beca.transactions.domain.exception.UserServiceUnavailableException;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
@@ -10,14 +11,22 @@ import org.springframework.web.client.RestClientException;
 
 import java.util.UUID;
 
-/** Confere se um usuário existe chamando o MS1 (GET /users/{id}). */
+/**
+ * Confere se um usuário existe chamando o MS1 (GET /users/{id}). A rota do MS1 exige autenticação; o MS2 se
+ * identifica como serviço com a chave interna (cabeçalho X-Internal-Key), sem repassar a senha de ninguém.
+ */
 @Component
 public class UsersServiceLookupAdapter implements UserLookupPort {
 
-    private final RestClient restClient;
+    static final String INTERNAL_KEY_HEADER = "X-Internal-Key";
 
-    public UsersServiceLookupAdapter(@Qualifier("usersRestClient") RestClient restClient) {
+    private final RestClient restClient;
+    private final String internalKey;
+
+    public UsersServiceLookupAdapter(@Qualifier("usersRestClient") RestClient restClient,
+                                     @Value("${users.internal-key:}") String internalKey) {
         this.restClient = restClient;
+        this.internalKey = internalKey;
     }
 
     @Override
@@ -25,6 +34,7 @@ public class UsersServiceLookupAdapter implements UserLookupPort {
         try {
             restClient.get()
                     .uri("/users/{id}", userId)
+                    .header(INTERNAL_KEY_HEADER, internalKey)
                     .retrieve()
                     .toBodilessEntity();
             return true;

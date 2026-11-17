@@ -25,6 +25,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,6 +42,9 @@ public class CreateTransactionService implements CreateTransactionUseCase {
 
     public static final String DESTINATION_NOT_FOUND =
             "Usuário de destino não encontrado.";
+
+    public static final String DESTINATION_ACCOUNT_NOT_FOUND =
+            "Conta do usuário de destino não encontrada no serviço de saldo.";
 
     public static final String DESTINATION_CHECK_UNAVAILABLE =
             "Serviço de usuários indisponível no momento. Tente novamente mais tarde.";
@@ -87,29 +91,53 @@ public class CreateTransactionService implements CreateTransactionUseCase {
         // A cotação é buscada antes da trava: é uma chamada externa e não depende do saldo.
         List<ExchangeRate> rates = findRates(now.toLocalDate());
 
-        ReentrantLock lock = userLocks.computeIfAbsent(request.userId(), id -> new ReentrantLock());
-        lock.lock();
+        List<ReentrantLock> locks = lockUsers(request);
         try {
             ApprovalDecision decision = decide(request, now.toLocalDate());
-            boolean balanceChanged = false;
+            List<BalanceAdjustment> applied = List.of();
             if (decision.isApproved()) {
-                // Só depois de aprovar o saldo da conta é atualizado na API Mock.
-                decision = applyBalanceChange(request);
-                balanceChanged = decision.isApproved();
+                // Só depois de aprovar o saldo das contas é atualizado na API Mock.
+                BalanceResult result = applyBalanceChanges(request);
+                decision = result.decision();
+                applied = result.applied();
             }
 
             Transaction transaction = Transaction.from(request, decision, now).withExchangeRates(rates);
             try {
                 return transactionRepositoryPort.save(transaction);
             } catch (RuntimeException exception) {
-                // O saldo já mudou na API Mock e a transação não foi gravada: desfaz a alteração.
-                if (balanceChanged) {
-                    undoBalanceChange(request);
-                }
+                // O saldo já mudou na API Mock e a transação não foi gravada: desfaz as alterações.
+                undoBalanceChanges(applied);
                 throw exception;
             }
         } finally {
-            lock.unlock();
+            unlockAll(locks);
+        }
+    }
+
+    /**
+     * Trava o usuário e, na transferência, também o destino. As travas são pegas sempre na mesma ordem (pelo id),
+     * para duas transferências em sentidos opostos (A para B e B para A) não ficarem esperando uma à outra.
+     */
+    private List<ReentrantLock> lockUsers(TransactionRequest request) {
+        List<UUID> ids = new ArrayList<>();
+        ids.add(request.userId());
+        if (request.type() == TransactionType.TRANSFER) {
+            ids.add(request.destinationUserId());
+        }
+        ids.sort(UUID::compareTo);
+        List<ReentrantLock> locks = new ArrayList<>();
+        for (UUID id : ids) {
+            ReentrantLock lock = userLocks.computeIfAbsent(id, key -> new ReentrantLock());
+            lock.lock();
+            locks.add(lock);
+        }
+        return locks;
+    }
+
+    private static void unlockAll(List<ReentrantLock> locks) {
+        for (int i = locks.size() - 1; i >= 0; i--) {
+            locks.get(i).unlock();
         }
     }
 
@@ -147,46 +175,85 @@ public class CreateTransactionService implements CreateTransactionUseCase {
         }
     }
 
-    /** O destino precisa existir no MS1. Devolve null quando está tudo certo. */
+    /**
+     * O destino precisa existir no MS1 e ter conta na API Mock (para receber o crédito). Conferir a conta antes
+     * evita debitar quem envia para depois não conseguir creditar. Devolve null quando está tudo certo.
+     */
     private ApprovalDecision checkDestination(UUID destinationUserId) {
         try {
             if (!userLookupPort.exists(destinationUserId)) {
                 return ApprovalDecision.rejected(DESTINATION_NOT_FOUND);
             }
-            return null;
         } catch (UserServiceUnavailableException exception) {
             return ApprovalDecision.rejected(DESTINATION_CHECK_UNAVAILABLE);
         }
-    }
-
-    /** Retirada, transferência e compra debitam; depósito credita. Se a atualização falhar, rejeita. */
-    private ApprovalDecision applyBalanceChange(TransactionRequest request) {
         try {
-            accountLimitsPort.adjustBalance(request.userId(), balanceDelta(request));
-            return ApprovalDecision.approved();
+            accountLimitsPort.findByUserId(destinationUserId);
+            return null;
         } catch (AccountNotFoundException exception) {
-            return ApprovalDecision.rejected(ACCOUNT_NOT_FOUND);
+            return ApprovalDecision.rejected(DESTINATION_ACCOUNT_NOT_FOUND);
         } catch (AccountServiceUnavailableException exception) {
             return ApprovalDecision.rejected(ACCOUNT_SERVICE_UNAVAILABLE);
         }
     }
 
     /**
-     * Desfaz o ajuste de saldo quando a transação não pôde ser gravada. Se o próprio desfazer falhar, registra no log
-     * o usuário e o valor, para correção manual.
+     * Retirada, compra e transferência debitam quem envia; depósito credita; a transferência também credita o
+     * destino. Se uma atualização falhar, desfaz as que já foram feitas (a API Mock não tem operação atômica entre
+     * duas contas) e rejeita a transação com o motivo.
      */
-    private void undoBalanceChange(TransactionRequest request) {
-        BigDecimal undo = balanceDelta(request).negate();
-        try {
-            accountLimitsPort.adjustBalance(request.userId(), undo);
-            log.warn("Transação não gravada: saldo do usuário {} desfeito ({}).", request.userId(), undo);
-        } catch (RuntimeException exception) {
-            log.error("FALHA ao desfazer o saldo do usuário {} (valor a aplicar: {}). Corrigir manualmente.",
-                    request.userId(), undo, exception);
+    private BalanceResult applyBalanceChanges(TransactionRequest request) {
+        List<BalanceAdjustment> applied = new ArrayList<>();
+        for (BalanceAdjustment adjustment : balanceAdjustments(request)) {
+            try {
+                accountLimitsPort.adjustBalance(adjustment.userId(), adjustment.delta());
+                applied.add(adjustment);
+            } catch (AccountNotFoundException exception) {
+                undoBalanceChanges(applied);
+                String reason = adjustment.userId().equals(request.userId())
+                        ? ACCOUNT_NOT_FOUND : DESTINATION_ACCOUNT_NOT_FOUND;
+                return new BalanceResult(ApprovalDecision.rejected(reason), List.of());
+            } catch (AccountServiceUnavailableException exception) {
+                undoBalanceChanges(applied);
+                return new BalanceResult(ApprovalDecision.rejected(ACCOUNT_SERVICE_UNAVAILABLE), List.of());
+            }
+        }
+        return new BalanceResult(ApprovalDecision.approved(), applied);
+    }
+
+    /**
+     * Desfaz os ajustes de saldo já aplicados (do último para o primeiro). Se algum desfazer falhar, registra no log o
+     * usuário e o valor, para correção manual, e segue desfazendo os demais.
+     */
+    private void undoBalanceChanges(List<BalanceAdjustment> applied) {
+        for (int i = applied.size() - 1; i >= 0; i--) {
+            BalanceAdjustment adjustment = applied.get(i);
+            BigDecimal undo = adjustment.delta().negate();
+            try {
+                accountLimitsPort.adjustBalance(adjustment.userId(), undo);
+                log.warn("Saldo do usuário {} desfeito ({}).", adjustment.userId(), undo);
+            } catch (RuntimeException exception) {
+                log.error("FALHA ao desfazer o saldo do usuário {} (valor a aplicar: {}). Corrigir manualmente.",
+                        adjustment.userId(), undo, exception);
+            }
         }
     }
 
-    private static BigDecimal balanceDelta(TransactionRequest request) {
-        return request.type().isOutflow() ? request.amount().negate() : request.amount();
+    private static List<BalanceAdjustment> balanceAdjustments(TransactionRequest request) {
+        if (!request.type().isOutflow()) {
+            return List.of(new BalanceAdjustment(request.userId(), request.amount()));
+        }
+        BalanceAdjustment debit = new BalanceAdjustment(request.userId(), request.amount().negate());
+        if (request.type() == TransactionType.TRANSFER) {
+            return List.of(debit, new BalanceAdjustment(request.destinationUserId(), request.amount()));
+        }
+        return List.of(debit);
+    }
+
+    /** Valor somado (ou subtraído, se negativo) ao saldo de um usuário. */
+    private record BalanceAdjustment(UUID userId, BigDecimal delta) {
+    }
+
+    private record BalanceResult(ApprovalDecision decision, List<BalanceAdjustment> applied) {
     }
 }

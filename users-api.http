@@ -18,3 +18,27 @@ Content-Type: text/csv
 
 < ./users/exemplos/usuarios-exemplo.csv
 --Boundary--
+
+
+### Listar usuários (exige autenticação básica: e-mail e senha)
+GET http://localhost:8081/users
+Authorization: Basic bWFyaWEuc2lsdmFAZXhhbXBsZS5jb206U2VuaGFAMTIz
+
+### Buscar usuário pelo id (exige autenticação básica)
+GET http://localhost:8081/users/{{userId}}
+Authorization: Basic bWFyaWEuc2lsdmFAZXhhbXBsZS5jb206U2VuaGFAMTIz
+
+### Atualizar o próprio usuário (exige autenticação básica; outro id responde 403)
+PUT http://localhost:8081/users/{{userId}}
+Authorization: Basic bWFyaWEuc2lsdmFAZXhhbXBsZS5jb206U2VuaGFAMTIz
+Content-Type: application/json
+
+{
+  "name": "Maria Silva",
+  "email": "maria.silva@example.com",
+  "cpf": "52998224725"
+}
+
+### Excluir o próprio usuário (exige autenticação básica; outro id responde 403)
+DELETE http://localhost:8081/users/{{userId}}
+Authorization: Basic bWFyaWEuc2lsdmFAZXhhbXBsZS5jb206U2VuaGFAMTIz

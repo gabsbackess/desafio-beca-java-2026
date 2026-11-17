@@ -1,5 +1,6 @@
 package br.com.beca.users.adapters.in.web.exception;
 
+import br.com.beca.users.domain.exception.AccessForbiddenException;
 import br.com.beca.users.domain.exception.InvalidCredentialsException;
 import br.com.beca.users.domain.exception.InvalidCsvException;
 import br.com.beca.users.domain.exception.UserAlreadyExistsException;
@@ -114,6 +115,15 @@ public class GlobalExceptionHandler {
             InvalidCredentialsException exception) {
         return buildErrorResponse(
                 HttpStatus.UNAUTHORIZED,
+                exception.getMessage()
+        );
+    }
+
+    @ExceptionHandler(AccessForbiddenException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessForbidden(
+            AccessForbiddenException exception) {
+        return buildErrorResponse(
+                HttpStatus.FORBIDDEN,
                 exception.getMessage()
         );
     }

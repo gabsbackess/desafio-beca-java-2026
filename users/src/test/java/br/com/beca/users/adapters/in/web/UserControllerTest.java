@@ -3,6 +3,9 @@ package br.com.beca.users.adapters.in.web;
 import java.util.UUID;
 import br.com.beca.users.adapters.in.web.dto.UserWebMapper;
 import br.com.beca.users.adapters.in.web.exception.GlobalExceptionHandler;
+import br.com.beca.users.adapters.in.web.security.AuthenticatedUser;
+import br.com.beca.users.adapters.in.web.security.SecurityConfig;
+import br.com.beca.users.adapters.in.web.security.UsersAuthenticationProvider;
 import br.com.beca.users.application.port.in.CreateUserUseCase;
 import br.com.beca.users.application.port.in.DeleteUserUseCase;
 import br.com.beca.users.application.port.in.FindUserByIdUseCase;
@@ -16,6 +19,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -25,7 +32,10 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -34,7 +44,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(UserController.class)
-@Import({GlobalExceptionHandler.class, UserWebMapper.class})
+@Import({GlobalExceptionHandler.class, UserWebMapper.class, SecurityConfig.class})
+@TestPropertySource(properties = "security.internal-key=chave-de-teste")
 class UserControllerTest {
 
     private static final String VALID_CPF = "52998224725";
@@ -45,6 +56,8 @@ class UserControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
+    private UsersAuthenticationProvider authenticationProvider;
+    @MockitoBean
     private CreateUserUseCase createUserUseCase;
     @MockitoBean
     private ListUsersUseCase listUsersUseCase;
@@ -54,6 +67,13 @@ class UserControllerTest {
     private UpdateUserUseCase updateUserUseCase;
     @MockitoBean
     private DeleteUserUseCase deleteUserUseCase;
+
+    /** Simula um usuário que já passou na autenticação básica. */
+    private static RequestPostProcessor loggedAs(UUID userId) {
+        return authentication(UsernamePasswordAuthenticationToken.authenticated(
+                new AuthenticatedUser(userId, "maria@email.com"), null,
+                List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+    }
 
     private static String body(String name, String email, String cpf, String password) {
         return """
@@ -130,7 +150,7 @@ class UserControllerTest {
     void shouldListUsersWithoutPassword() throws Exception {
         when(listUsersUseCase.list()).thenReturn(List.of(savedUser()));
 
-        mockMvc.perform(get("/users"))
+        mockMvc.perform(get("/users").with(loggedAs(ID)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("Maria"))
                 .andExpect(jsonPath("$[0].password").doesNotExist());
@@ -141,14 +161,14 @@ class UserControllerTest {
         when(findUserByIdUseCase.findById(UNKNOWN_ID))
                 .thenThrow(new UserNotFoundException("Usuário não encontrado."));
 
-        mockMvc.perform(get("/users/" + UNKNOWN_ID))
+        mockMvc.perform(get("/users/" + UNKNOWN_ID).with(loggedAs(ID)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("Usuário não encontrado."));
     }
 
     @Test
     void shouldReturn400WhenIdIsNotANumber() throws Exception {
-        mockMvc.perform(get("/users/abc"))
+        mockMvc.perform(get("/users/abc").with(loggedAs(ID)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.message").value("Valor inválido para o parâmetro 'id'."));
@@ -158,7 +178,7 @@ class UserControllerTest {
     void shouldUpdateUserWithoutPassword() throws Exception {
         when(updateUserUseCase.update(eq(ID), any(User.class))).thenReturn(savedUser());
 
-        mockMvc.perform(put("/users/" + ID)
+        mockMvc.perform(put("/users/" + ID).with(loggedAs(ID))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"name":"Maria","email":"maria@email.com","cpf":"%s"}
@@ -169,7 +189,7 @@ class UserControllerTest {
 
     @Test
     void shouldReturn204WhenUserIsDeleted() throws Exception {
-        mockMvc.perform(delete("/users/" + ID))
+        mockMvc.perform(delete("/users/" + ID).with(loggedAs(ID)))
                 .andExpect(status().isNoContent());
     }
 
@@ -178,7 +198,94 @@ class UserControllerTest {
         doThrow(new UserNotFoundException("Usuário não encontrado."))
                 .when(deleteUserUseCase).delete(UNKNOWN_ID);
 
-        mockMvc.perform(delete("/users/" + UNKNOWN_ID))
+        mockMvc.perform(delete("/users/" + UNKNOWN_ID).with(loggedAs(UNKNOWN_ID)))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldReturn401WhenListingWithoutCredentials() throws Exception {
+        mockMvc.perform(get("/users"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401));
+        verifyNoInteractions(listUsersUseCase);
+    }
+
+    @Test
+    void shouldReturn401WhenUpdatingWithoutCredentials() throws Exception {
+        mockMvc.perform(put("/users/" + ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Maria","email":"maria@email.com","cpf":"%s"}
+                                """.formatted(VALID_CPF)))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(updateUserUseCase);
+    }
+
+    @Test
+    void shouldReturn401WhenDeletingWithoutCredentials() throws Exception {
+        mockMvc.perform(delete("/users/" + ID))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(deleteUserUseCase);
+    }
+
+    @Test
+    void shouldReturn403WhenUpdatingAnotherUser() throws Exception {
+        mockMvc.perform(put("/users/" + ID).with(loggedAs(UNKNOWN_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Maria","email":"maria@email.com","cpf":"%s"}
+                                """.formatted(VALID_CPF)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
+        verifyNoInteractions(updateUserUseCase);
+    }
+
+    @Test
+    void shouldReturn403WhenDeletingAnotherUser() throws Exception {
+        mockMvc.perform(delete("/users/" + ID).with(loggedAs(UNKNOWN_ID)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
+        verifyNoInteractions(deleteUserUseCase);
+    }
+
+    @Test
+    void shouldDeleteOwnUser() throws Exception {
+        mockMvc.perform(delete("/users/" + ID).with(loggedAs(ID)))
+                .andExpect(status().isNoContent());
+        verify(deleteUserUseCase).delete(ID);
+    }
+
+    @Test
+    void shouldAllowCreatingUserWithoutCredentials() throws Exception {
+        when(createUserUseCase.create(any(User.class))).thenReturn(savedUser());
+
+        mockMvc.perform(post("/users")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("Maria", "maria@email.com", VALID_CPF, "Senha@123")))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void shouldAllowInternalServiceToFindUserById() throws Exception {
+        when(findUserByIdUseCase.findById(ID)).thenReturn(savedUser());
+
+        mockMvc.perform(get("/users/" + ID).header("X-Internal-Key", "chave-de-teste"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(ID.toString()))
+                .andExpect(jsonPath("$.password").doesNotExist());
+    }
+
+    @Test
+    void shouldReturn401WhenInternalKeyIsWrong() throws Exception {
+        mockMvc.perform(get("/users/" + ID).header("X-Internal-Key", "chave-errada"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(findUserByIdUseCase);
+    }
+
+    @Test
+    void shouldNotLetInternalServiceListUsers() throws Exception {
+        mockMvc.perform(get("/users").header("X-Internal-Key", "chave-de-teste"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(listUsersUseCase);
     }
 }

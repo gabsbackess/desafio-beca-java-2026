@@ -5,15 +5,19 @@ import br.com.beca.users.adapters.in.web.dto.CreateUserRequest;
 import br.com.beca.users.adapters.in.web.dto.CreateUserResponse;
 import br.com.beca.users.adapters.in.web.dto.UpdateUserRequest;
 import br.com.beca.users.adapters.in.web.dto.UserWebMapper;
+import br.com.beca.users.adapters.in.web.security.AuthenticatedUser;
 import br.com.beca.users.application.port.in.*;
+import br.com.beca.users.domain.exception.AccessForbiddenException;
 import br.com.beca.users.domain.model.User;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,6 +34,12 @@ public class UserController {
             """;
     private static final String CONFLICT_EXAMPLE = """
             {"status": 409, "message": "CPF ou e-mail já cadastrado."}
+            """;
+    private static final String UNAUTHORIZED_EXAMPLE = """
+            {"status": 401, "message": "Credenciais inválidas ou ausentes."}
+            """;
+    private static final String FORBIDDEN_EXAMPLE = """
+            {"status": 403, "message": "Você só pode alterar ou excluir o seu próprio usuário."}
             """;
     private static final String USER_EXAMPLE = """
             {"id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "name": "Maria Silva", "email": "maria.silva@example.com", "cpf": "52998224725", "createdAt": "2026-11-10T14:30:00"}
@@ -76,7 +86,11 @@ public class UserController {
         return response;
     }
 
-    @Operation(summary = "Listar usuários")
+    @Operation(summary = "Listar usuários", description = "Exige autenticação básica (e-mail e senha).",
+            security = @SecurityRequirement(name = "basicAuth"))
+    @ApiResponse(responseCode = "401", description = "Credenciais ausentes ou inválidas",
+            content = @Content(mediaType = "application/json",
+                    examples = @ExampleObject(value = UNAUTHORIZED_EXAMPLE)))
     @ApiResponse(responseCode = "200", description = "Lista de usuários (sem a senha)",
             content = @Content(mediaType = "application/json",
                     examples = @ExampleObject(value = "[" + USER_EXAMPLE + "]")))
@@ -89,7 +103,11 @@ public class UserController {
                 .toList();
     }
 
-    @Operation(summary = "Buscar usuário pelo id")
+    @Operation(summary = "Buscar usuário pelo id", description = "Exige autenticação básica (e-mail e senha).",
+            security = @SecurityRequirement(name = "basicAuth"))
+    @ApiResponse(responseCode = "401", description = "Credenciais ausentes ou inválidas",
+            content = @Content(mediaType = "application/json",
+                    examples = @ExampleObject(value = UNAUTHORIZED_EXAMPLE)))
     @ApiResponse(responseCode = "200", description = "Usuário encontrado",
             content = @Content(mediaType = "application/json",
                     examples = @ExampleObject(value = USER_EXAMPLE)))
@@ -106,7 +124,15 @@ public class UserController {
     }
 
     @Operation(summary = "Atualizar usuário",
-            description = "Atualiza nome, e-mail e CPF. A senha é opcional: só é trocada quando vier preenchida.")
+            description = "Atualiza nome, e-mail e CPF. A senha é opcional: só é trocada quando vier preenchida. "
+                    + "Exige autenticação básica e só vale para o próprio usuário.",
+            security = @SecurityRequirement(name = "basicAuth"))
+    @ApiResponse(responseCode = "401", description = "Credenciais ausentes ou inválidas",
+            content = @Content(mediaType = "application/json",
+                    examples = @ExampleObject(value = UNAUTHORIZED_EXAMPLE)))
+    @ApiResponse(responseCode = "403", description = "Só o próprio usuário pode fazer isto",
+            content = @Content(mediaType = "application/json",
+                    examples = @ExampleObject(value = FORBIDDEN_EXAMPLE)))
     @ApiResponse(responseCode = "200", description = "Usuário atualizado",
             content = @Content(mediaType = "application/json",
                     examples = @ExampleObject(value = USER_EXAMPLE)))
@@ -122,22 +148,39 @@ public class UserController {
     @PutMapping("/{id}")
     public CreateUserResponse update(
             @PathVariable UUID id,
-            @Valid @RequestBody UpdateUserRequest request) {
+            @Valid @RequestBody UpdateUserRequest request,
+            @AuthenticationPrincipal AuthenticatedUser caller) {
+        requireOwner(caller, id);
         User user = userWebMapper.toDomain(request);
         User updatedUser = updateUserUseCase.update(id, user);
         return userWebMapper.toResponse(updatedUser);
     }
 
-    @Operation(summary = "Excluir usuário")
+    @Operation(summary = "Excluir usuário",
+            description = "Exige autenticação básica e só vale para o próprio usuário.",
+            security = @SecurityRequirement(name = "basicAuth"))
+    @ApiResponse(responseCode = "401", description = "Credenciais ausentes ou inválidas",
+            content = @Content(mediaType = "application/json",
+                    examples = @ExampleObject(value = UNAUTHORIZED_EXAMPLE)))
+    @ApiResponse(responseCode = "403", description = "Só o próprio usuário pode fazer isto",
+            content = @Content(mediaType = "application/json",
+                    examples = @ExampleObject(value = FORBIDDEN_EXAMPLE)))
     @ApiResponse(responseCode = "204", description = "Usuário excluído")
     @ApiResponse(responseCode = "404", description = "Usuário não encontrado",
             content = @Content(mediaType = "application/json",
                     examples = @ExampleObject(value = NOT_FOUND_EXAMPLE)))
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable UUID id) {
+    public void delete(@PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUser caller) {
+        requireOwner(caller, id);
         deleteUserUseCase.delete(id);
+    }
 
+    /** Alterar e excluir valem só para o próprio usuário autenticado. */
+    private static void requireOwner(AuthenticatedUser caller, UUID id) {
+        if (caller == null || !caller.id().equals(id)) {
+            throw new AccessForbiddenException("Você só pode alterar ou excluir o seu próprio usuário.");
+        }
     }
 
 }

@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.http.HttpMethod.GET;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -27,7 +28,7 @@ class UsersServiceLookupAdapterTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://users");
         server = MockRestServiceServer.bindTo(builder).build();
-        adapter = new UsersServiceLookupAdapter(builder.build());
+        adapter = new UsersServiceLookupAdapter(builder.build(), "chave-de-teste");
     }
 
     @Test
@@ -38,6 +39,24 @@ class UsersServiceLookupAdapterTest {
 
         assertTrue(adapter.exists(Ids.OTHER_USER));
         server.verify();
+    }
+
+    @Test
+    void shouldSendTheInternalKeyToTheUsersService() {
+        server.expect(requestTo("http://users/users/" + Ids.OTHER_USER))
+                .andExpect(header("X-Internal-Key", "chave-de-teste"))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        assertTrue(adapter.exists(Ids.OTHER_USER));
+        server.verify();
+    }
+
+    @Test
+    void shouldThrowUnavailableWhenTheUsersServiceRefusesTheKey() {
+        server.expect(requestTo("http://users/users/" + Ids.OTHER_USER))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+
+        assertThrows(UserServiceUnavailableException.class, () -> adapter.exists(Ids.OTHER_USER));
     }
 
     @Test
