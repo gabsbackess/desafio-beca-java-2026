@@ -41,6 +41,9 @@ public class UserController {
     private static final String FORBIDDEN_EXAMPLE = """
             {"status": 403, "message": "Você só pode alterar ou excluir o seu próprio usuário."}
             """;
+    private static final String SUMMARY_EXAMPLE = """
+            {"id": "11111111-2222-3333-4444-555555555555", "name": "João Santos"}
+            """;
     private static final String USER_EXAMPLE = """
             {"id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "name": "Maria Silva", "email": "maria.silva@example.com", "cpf": "52998224725", "createdAt": "2026-11-10T14:30:00"}
             """;
@@ -86,29 +89,36 @@ public class UserController {
         return response;
     }
 
-    @Operation(summary = "Listar usuários", description = "Exige autenticação básica (e-mail e senha).",
+    @Operation(summary = "Listar usuários",
+            description = "Exige autenticação básica (e-mail e senha). O seu próprio cadastro vem completo; os "
+                    + "demais usuários vêm só com id e nome (sem e-mail, CPF nem data de cadastro).",
             security = @SecurityRequirement(name = "basicAuth"))
     @ApiResponse(responseCode = "401", description = "Credenciais ausentes ou inválidas",
             content = @Content(mediaType = "application/json",
                     examples = @ExampleObject(value = UNAUTHORIZED_EXAMPLE)))
-    @ApiResponse(responseCode = "200", description = "Lista de usuários (sem a senha)",
+    @ApiResponse(responseCode = "200", description = "Lista de usuários (sem a senha): o seu cadastro completo e "
+            + "os demais só com id e nome",
             content = @Content(mediaType = "application/json",
-                    examples = @ExampleObject(value = "[" + USER_EXAMPLE + "]")))
+                    examples = @ExampleObject(value = "[" + USER_EXAMPLE + "," + SUMMARY_EXAMPLE + "]")))
     @GetMapping
-    public List<CreateUserResponse> list() {
+    public List<CreateUserResponse> list(@AuthenticationPrincipal AuthenticatedUser caller) {
+        UUID viewerId = viewerId(caller);
         List<User> users = listUsersUseCase.list();
 
         return users.stream()
-                .map(userWebMapper::toResponse)
+                .map(user -> userWebMapper.toResponseFor(user, viewerId))
                 .toList();
     }
 
-    @Operation(summary = "Buscar usuário pelo id", description = "Exige autenticação básica (e-mail e senha).",
+    @Operation(summary = "Buscar usuário pelo id",
+            description = "Exige autenticação básica (e-mail e senha). O próprio usuário recebe os dados completos; "
+                    + "qualquer outro (e o MS2, pela chave interna) recebe só id e nome.",
             security = @SecurityRequirement(name = "basicAuth"))
     @ApiResponse(responseCode = "401", description = "Credenciais ausentes ou inválidas",
             content = @Content(mediaType = "application/json",
                     examples = @ExampleObject(value = UNAUTHORIZED_EXAMPLE)))
-    @ApiResponse(responseCode = "200", description = "Usuário encontrado",
+    @ApiResponse(responseCode = "200", description = "Usuário encontrado (completo para o dono; id e nome para os "
+            + "demais)",
             content = @Content(mediaType = "application/json",
                     examples = @ExampleObject(value = USER_EXAMPLE)))
     @ApiResponse(responseCode = "400", description = "Id inválido (não é um UUID)",
@@ -118,9 +128,9 @@ public class UserController {
             content = @Content(mediaType = "application/json",
                     examples = @ExampleObject(value = NOT_FOUND_EXAMPLE)))
     @GetMapping("/{id}")
-    public CreateUserResponse findById(@PathVariable UUID id) {
+    public CreateUserResponse findById(@PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUser caller) {
         User user = findUserByIdUseCase.findById(id);
-        return userWebMapper.toResponse(user);
+        return userWebMapper.toResponseFor(user, viewerId(caller));
     }
 
     @Operation(summary = "Atualizar usuário",
@@ -174,6 +184,11 @@ public class UserController {
     public void delete(@PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUser caller) {
         requireOwner(caller, id);
         deleteUserUseCase.delete(id);
+    }
+
+    /** Id de quem consulta; nulo para o MS2 (chave interna), que só recebe a visão resumida. */
+    private static UUID viewerId(AuthenticatedUser caller) {
+        return caller == null ? null : caller.id();
     }
 
     /** Alterar e excluir valem só para o próprio usuário autenticado. */

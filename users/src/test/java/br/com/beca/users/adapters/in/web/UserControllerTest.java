@@ -272,6 +272,9 @@ class UserControllerTest {
         mockMvc.perform(get("/users/" + ID).header("X-Internal-Key", "chave-de-teste"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(ID.toString()))
+                .andExpect(jsonPath("$.name").value("Maria"))
+                .andExpect(jsonPath("$.email").doesNotExist())
+                .andExpect(jsonPath("$.cpf").doesNotExist())
                 .andExpect(jsonPath("$.password").doesNotExist());
     }
 
@@ -287,5 +290,50 @@ class UserControllerTest {
         mockMvc.perform(get("/users").header("X-Internal-Key", "chave-de-teste"))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(listUsersUseCase);
+    }
+
+    @Test
+    void shouldShowFullDataForTheOwnerAndOnlyIdAndNameForOthersWhenListing() throws Exception {
+        User other = new User(UNKNOWN_ID, "Joao", "joao@email.com", "11144477735", "hash-bcrypt",
+                LocalDateTime.of(2026, 1, 11, 10, 0));
+        when(listUsersUseCase.list()).thenReturn(List.of(savedUser(), other));
+
+        mockMvc.perform(get("/users").with(loggedAs(ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(ID.toString()))
+                .andExpect(jsonPath("$[0].email").value("maria@email.com"))
+                .andExpect(jsonPath("$[0].cpf").value(VALID_CPF))
+                .andExpect(jsonPath("$[0].createdAt").exists())
+                .andExpect(jsonPath("$[1].id").value(UNKNOWN_ID.toString()))
+                .andExpect(jsonPath("$[1].name").value("Joao"))
+                .andExpect(jsonPath("$[1].email").doesNotExist())
+                .andExpect(jsonPath("$[1].cpf").doesNotExist())
+                .andExpect(jsonPath("$[1].createdAt").doesNotExist())
+                .andExpect(jsonPath("$[1].password").doesNotExist());
+    }
+
+    @Test
+    void shouldReturnFullDataWhenTheOwnerFindsOwnUser() throws Exception {
+        when(findUserByIdUseCase.findById(ID)).thenReturn(savedUser());
+
+        mockMvc.perform(get("/users/" + ID).with(loggedAs(ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("maria@email.com"))
+                .andExpect(jsonPath("$.cpf").value(VALID_CPF))
+                .andExpect(jsonPath("$.password").doesNotExist());
+    }
+
+    @Test
+    void shouldReturnOnlyIdAndNameWhenAnotherUserFindsTheUser() throws Exception {
+        when(findUserByIdUseCase.findById(ID)).thenReturn(savedUser());
+
+        mockMvc.perform(get("/users/" + ID).with(loggedAs(UNKNOWN_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(ID.toString()))
+                .andExpect(jsonPath("$.name").value("Maria"))
+                .andExpect(jsonPath("$.email").doesNotExist())
+                .andExpect(jsonPath("$.cpf").doesNotExist())
+                .andExpect(jsonPath("$.createdAt").doesNotExist())
+                .andExpect(jsonPath("$.password").doesNotExist());
     }
 }

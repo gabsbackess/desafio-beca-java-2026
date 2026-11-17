@@ -199,14 +199,14 @@ URL base: `http://localhost:8081`
 | Método | Rota | Autenticação | Descrição | Sucesso |
 |---|---|---|---|---|
 | POST | `/users` | aberta | Cadastrar usuário | 201 |
-| GET | `/users` | **Basic Auth** | Listar usuários | 200 |
-| GET | `/users/{id}` | **Basic Auth** (ou chave interna do MS2) | Buscar usuário pelo id (UUID) | 200 |
+| GET | `/users` | **Basic Auth** | Listar usuários (o seu cadastro completo; os demais só com `id` e `name`) | 200 |
+| GET | `/users/{id}` | **Basic Auth** (ou chave interna do MS2) | Buscar usuário pelo id (UUID): completo para o dono, só `id` e `name` para os demais | 200 |
 | PUT | `/users/{id}` | **Basic Auth**, só o próprio usuário | Atualizar usuário | 200 |
 | DELETE | `/users/{id}` | **Basic Auth**, só o próprio usuário | Excluir usuário | 204 |
 | POST | `/users/import` | aberta | Importar usuários por CSV | 200 |
 | POST | `/users/authenticate` | aberta | Conferir e-mail e senha (usado pelo MS2) | 200 |
 
-**Autenticação no MS1.** Listar, buscar, alterar e excluir exigem autenticação básica (HTTP Basic) com o e-mail e a senha do usuário. No Swagger, use o botão **Authorize**. Sem credenciais, ou com credenciais erradas, a resposta é 401. Alterar e excluir valem **só para o próprio usuário**: tentar mexer em outro `id` responde 403 `Você só pode alterar ou excluir o seu próprio usuário.` O cadastro, a importação por CSV, `/users/authenticate` e o Swagger continuam abertos. O MS2 consulta `GET /users/{id}` (para conferir o destino de uma transferência) enviando a chave interna `X-Internal-Key`, com o valor de `INTERNAL_API_KEY`; essa chave só abre essa rota e não dá acesso a listar, alterar nem excluir.
+**Autenticação no MS1.** Listar, buscar, alterar e excluir exigem autenticação básica (HTTP Basic) com o e-mail e a senha do usuário. No Swagger, use o botão **Authorize**. Sem credenciais, ou com credenciais erradas, a resposta é 401. Alterar e excluir valem **só para o próprio usuário**: tentar mexer em outro `id` responde 403 `Você só pode alterar ou excluir o seu próprio usuário.` **Dados pessoais.** O usuário vê o próprio cadastro completo (`id`, `name`, `email`, `cpf`, `createdAt`). Para os demais, a listagem e a busca por id devolvem só `id` e `name`: e-mail, CPF e data de cadastro não aparecem. O MS2, que consulta `GET /users/{id}` apenas para saber se o destino existe, recebe essa mesma visão resumida. O cadastro, a importação por CSV, `/users/authenticate` e o Swagger continuam abertos. O MS2 consulta `GET /users/{id}` (para conferir o destino de uma transferência) enviando a chave interna `X-Internal-Key`, com o valor de `INTERNAL_API_KEY`; essa chave só abre essa rota e não dá acesso a listar, alterar nem excluir.
 
 **Regras de negócio**
 
@@ -407,6 +407,7 @@ Pontos em que o pedido do PO deixava a decisão para o time:
 | Transferência e crédito no destino | O destino precisa existir no MS1 e ter conta no MockAPI. O MS2 debita quem envia e credita o destinatário. A API Mock não tem operação atômica entre duas contas; por isso o MS2 faz os dois `PUT` em sequência e, se algo falhar, desfaz o que já foi aplicado (compensação). Fica uma janela curta em que, se o próprio desfazer falhar, o saldo precisa de correção manual (o log avisa). Em produção, o saldo ficaria no banco do próprio serviço e a transferência seria uma única transação. |
 | Como o MS2 consulta o MS1 com a rota protegida | `GET /users/{id}` passou a exigir autenticação. O MS2 não guarda a senha de ninguém, então se identifica como serviço com uma chave interna (`X-Internal-Key`, variável `INTERNAL_API_KEY`). A chave só vale para essa rota. |
 | Quem altera ou exclui usuários | Só o próprio usuário autenticado (403 para os demais). Não há perfil de administrador. |
+| Quem vê os dados pessoais | Listar e buscar exigem login. O dono vê o cadastro completo; os outros usuários e o MS2 veem só `id` e `name` (minimização de dados: o CPF e o e-mail não saem para terceiros). |
 | Concorrência no saldo | O saldo é lido e depois atualizado na API Mock, que não oferece atualização condicional. Para duas compras simultâneas não passarem do saldo, o MS2 usa uma trava por usuário: as operações do mesmo usuário rodam uma de cada vez (operações de usuários diferentes continuam em paralelo). A trava vale para uma instância do serviço; com várias instâncias seria preciso uma atualização condicional (versão do registro) ou o saldo no banco. |
 | Falha ao gravar a transação | Se o saldo já foi atualizado na API Mock e a gravação da transação falha, o MS2 desfaz o ajuste de saldo (operação inversa) e devolve o erro. Se o próprio desfazer falhar, o log registra o usuário e o valor (`FALHA ao desfazer o saldo...`) para correção manual. |
 | Fuso horário | O "dia" do limite diário e das análises é o de São Paulo (`America/Sao_Paulo`), configurável em `app.timezone`, e não o do servidor. |
